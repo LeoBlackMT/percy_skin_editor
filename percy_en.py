@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
