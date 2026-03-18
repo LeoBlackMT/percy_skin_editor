@@ -135,7 +135,8 @@ def get_current_d(image_path):
         raise LNImageError("在右侧中点未能找到非背景色像素。")
     def find_background_upwards(col, start_y):
         for y in range(start_y, -1, -1):
-            if img.getpixel((col, y)) == bg:
+            px = img.getpixel((col, y))
+            if px == bg or px[3] == 0:
                 return y
         raise LNImageError(f"在列 {col} 从 y={start_y} 向上未找到背景色像素。")
     y1 = find_background_upwards(x1, mid_y)
@@ -181,7 +182,8 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
 
     def find_background_upwards(col, start_y):
         for y in range(start_y, -1, -1):
-            if img.getpixel((col, y)) == bg:
+            px = img.getpixel((col, y))
+            if px == bg or px[3] == 0:
                 return y
         raise LNImageError(f"在列 {col} 从 y={start_y} 向上未找到背景色像素。")
     y1 = find_background_upwards(x1, mid_y)

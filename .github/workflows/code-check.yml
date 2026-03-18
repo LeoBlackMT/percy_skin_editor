@@ -1,0 +1,50 @@
+name: Code Checks (static/type/security)
+
+on:
+  workflow_dispatch:
+  push: {}
+  pull_request:
+    types: [closed]
+
+jobs:
+  checks:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true) }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show workspace (debug)
+        run: |
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+          pwd
+          ls -la
+          ls -la percy_skin_editor || true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies & tools
+        run: |
+          cd percy_skin_editor || exit 0
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install ruff mypy pip-audit
+
+      - name: Static analysis (ruff)
+        run: |
+          cd percy_skin_editor || exit 0
+          ruff check .
+
+      - name: Type checking (mypy)
+        run: |
+          cd percy_skin_editor || exit 0
+          mypy .
+
+      - name: Dependency security scan (pip-audit)
+        run: |
+          cd percy_skin_editor || exit 0
+          pip-audit --progress-spinner=off

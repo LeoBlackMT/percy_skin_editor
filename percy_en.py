@@ -135,7 +135,8 @@ def get_current_d(image_path):
         raise LNImageError("No non-background pixels found at right mid-point.")
     def find_background_upwards(col, start_y):
         for y in range(start_y, -1, -1):
-            if img.getpixel((col, y)) == bg:
+            px = img.getpixel((col, y))
+            if px == bg or px[3] == 0:
                 return y
         raise LNImageError(f"No background pixels found in column {col} from y={start_y} upwards.")
     y1 = find_background_upwards(x1, mid_y)
@@ -181,7 +182,8 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
 
     def find_background_upwards(col, start_y):
         for y in range(start_y, -1, -1):
-            if img.getpixel((col, y)) == bg:
+            px = img.getpixel((col, y))
+            if px == bg or px[3] == 0:
                 return y
         raise LNImageError(f"No background pixels found in column {col} from y={start_y} upwards.")
     y1 = find_background_upwards(x1, mid_y)
