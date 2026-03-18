@@ -1,6 +1,14 @@
 import os
 import sys
+import requests
+from packaging.version import parse as parse_version
 from PIL import Image
+
+VERSION = "1.1.0"
+
+_OWNER = "LeoBlackMT"
+_REPO = "percy_skin_editor"
+_GITHUB_API = "https://api.github.com"
 
 def getch():
     """Return the single character pressed by the user (no need to wait for Enter)"""
@@ -36,6 +44,45 @@ class Color:
 class LNImageError(Exception):
     """Custom exception"""
     pass
+
+def check_update(current_version: str):
+    """
+    Check for updates on GitHub Releases.
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        r = requests.get(f"{_GITHUB_API}/repos/{_OWNER}/{_REPO}/releases/latest", headers=headers, timeout=10)
+        if r.status_code == 200:
+            rel = r.json()
+        else:
+            r2 = requests.get(f"{_GITHUB_API}/repos/{_OWNER}/{_REPO}/releases", headers=headers, timeout=10)
+            r2.raise_for_status()
+            rels = r2.json()
+            rel = None
+            for rr in rels:
+                if rr.get("draft"):
+                    continue
+                if rr.get("prerelease"):
+                    continue
+                rel = rr
+                break
+            if not rel:
+                return False, ""
+    except Exception:
+        return False, ""
+
+    tag = rel.get("tag_name") or rel.get("name") or ""
+    latest = tag.lstrip("vV").strip()
+    if not latest:
+        return False, ""
+    try:
+        has = parse_version(latest) > parse_version(current_version.lstrip("vV").strip())
+    except Exception:
+        has = latest != current_version.lstrip("vV").strip()
+    return has, latest
 
 def normalize_height(img, target_h, bg):
     w, h = img.size
@@ -240,25 +287,25 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
 def print_help():
     help_text = f"""
 {Color.BOLD}{Color.OKGREEN}========== Help Information =========={Color.ENDC}
-{Color.OKCYAN}【What is Percy Skin?】{Color.ENDC}
-  • Percy skin is a technique that stretches the note body to tens of thousands of pixels,
-    then creates a short tail visual effect by cutting from the top.
-  • In high-density LN (Long Note) charts, players often use percy skins for better
-    visual feedback and playability.
-  • Percy skins can significantly reduce reading pressure, but cannot precisely locate
-    the release point.
-  • We define "cut off by x pixels" as the distance from the first non-background pixel
-    to the top of the image - this is what the program adjusts.
-  • In this program, we use 'd' to represent this value.
+{Color.OKCYAN}【What Is a Percy Skin】{Color.ENDC}
+    • A percy skin stretches the note body to tens of thousands of pixels, then creates a
+        short-tail visual effect by cutting from the top.
+    • In high-density LN charts, players often use percy skins for better visual feedback
+        and playability.
+    • Percy skins can significantly reduce reading pressure, but cannot precisely locate
+        the release point.
+    • We define "cut off by x pixels" as the distance from the first non-background pixel
+        to the top of the image.
+    • In this program, we use d to represent this value.
 {Color.OKCYAN}【Mode Explanation】{Color.ENDC}
-  • Stable Mode : Directly set a new cut-off value; the program automatically adjusts
-                 the note tail and body.
-  • Lazer Mode  : According to measurements, the Lazer version (early 2026) will
-                 incorrectly stretch non-percy skins by approximately 75px.
-                 Therefore, any input in this mode will be reduced by 75px, with a
-                 minimum of 0.
-                 btw, to avoid excessive stretching, all images will be normalized to a height of 32800px.
+    • Stable Mode: Directly sets a new d value. The program automatically adjusts the
+        note tail and body.
+    • Lazer Mode: Based on current measurements, the Lazer version in early 2026 may
+        incorrectly stretch non-percy skins by about 75px.
+        Therefore, any input in this mode is reduced by 75px, with a minimum of 0.
+        To prevent excessive stretching, all images are normalized to a fixed height of 32800px.
 {Color.OKCYAN}【Important Notes】{Color.ENDC}
+    0. Back up the original image before processing or overwriting.
   1. Only supports PNG images (RGBA mode). Background color is determined by the
      first pixel in the top-left corner.
   2. Image height must be at least 1000 pixels, otherwise structure detection may fail.
@@ -267,7 +314,9 @@ def print_help():
         output-filename-Xpx-lzr.png (Lazer mode)
   4. If the original image doesn't match the expected structure (e.g., note tail/body
      not found), the program will report an error and return to the menu.
-  5. If you encounter any problem, please open an issue on the GitHub repository or contact the author.
+    5. This program currently does not support gradient, patterned, or other complex
+         non-uniform note bodies.
+    6. If you encounter any issue, please open an issue on GitHub or contact the author.
 {Color.BOLD}{Color.OKGREEN}=====================================
 {Color.ENDC}
 """
@@ -322,7 +371,8 @@ def main():
         print("  {0} - Stable Mode: Adjust cut-off value".format(Color.OKBLUE + "2" + Color.ENDC))
         print("  {0} - Lazer Mode: Adjust cut-off value".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - Switch image".format(Color.OKBLUE + "4" + Color.ENDC))
-        print("  {0} - Quit".format(Color.OKBLUE + "5" + Color.ENDC))
+        print("  {0} - Check updates".format(Color.OKBLUE + "5" + Color.ENDC))
+        print("  {0} - Quit".format(Color.OKBLUE + "6" + Color.ENDC))
         print("> ", end='', flush=True)
 
         choice = getch()
@@ -386,6 +436,19 @@ def main():
             current_image_path = None
             clear_screen()
         elif choice == '5':
+            print(f"\n{Color.OKBLUE}Checking for updates...{Color.ENDC}")
+            has, latest = check_update(VERSION)
+            if not latest:
+                print(f"{Color.FAIL}Error: Could not fetch latest version info.{Color.ENDC}")
+            else:
+                if has:
+                    print(f"{Color.OKGREEN}New version detected: {latest} (current: {VERSION}){Color.ENDC}")
+                    print(f"Please visit the releases page to download the latest build: https://github.com/{_OWNER}/{_REPO}/releases")
+                else:
+                    print(f"{Color.OKGREEN}You are already on the latest version: {VERSION}{Color.ENDC}")
+            input("Press Enter to continue...")
+            clear_screen()
+        elif choice == '6':
             print(f"{Color.OKGREEN}Exiting program.{Color.ENDC}")
             break
         else:

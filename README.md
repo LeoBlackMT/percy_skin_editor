@@ -13,6 +13,8 @@ Percy Skin Editor 是一个用于 osu!mania 的投皮编辑工具。
 ### 环境要求
 - Python 3.8+
 - Pillow
+- requests
+- packaging
 
 ### 安装
 
@@ -34,8 +36,9 @@ python percy_en.py
 
 ### 注意事项
 - 处理前请备份原图
-- 若图片结构异常（找不到面身/面尾），程序会报错
+- 若 LN 结构不符合预期，处理可能失败
 - Lazer 模式会进行 -75px 修正（下限 0），同时将图片长度固定在32800px。
+- 本程序暂不支持渐变颜色面身、非单一颜色或含有图案面身的皮肤。
 
 ---
 
@@ -50,6 +53,8 @@ This tool adjusts the cut-off amount at the top of the image, i.e., cut off by x
 ### Requirements
 - Python 3.8+
 - Pillow
+- requests
+- packaging
 
 ### Installation
 
@@ -74,4 +79,5 @@ python percy_en.py
 ### Notes
 - Back up original files before processing
 - Invalid LN structure may cause processing errors
-- Lazer mode applies a -75px correction in currently (minimum 0), and normalizes all images to a height of 32800px to prevent excessive stretching.
+- Lazer mode applies a -75px correction (minimum 0), and normalizes all images to a fixed height of 32800px to prevent excessive stretching.
+- This program currently does not support gradient, patterned, or other complex non-uniform note bodies.

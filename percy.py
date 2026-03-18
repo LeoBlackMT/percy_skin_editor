@@ -1,6 +1,14 @@
 import os
 import sys
+import requests
+from packaging.version import parse as parse_version
 from PIL import Image
+
+VERSION = "1.1.0"
+
+_OWNER = "LeoBlackMT"
+_REPO = "percy_skin_editor"
+_GITHUB_API = "https://api.github.com"
 
 def getch():
     """返回用户按下的单个字符（不等待回车）"""
@@ -36,6 +44,45 @@ class Color:
 class LNImageError(Exception):
     """自定义异常"""
     pass
+
+def check_update(current_version: str):
+    """
+    检查更新
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        r = requests.get(f"{_GITHUB_API}/repos/{_OWNER}/{_REPO}/releases/latest", headers=headers, timeout=10)
+        if r.status_code == 200:
+            rel = r.json()
+        else:
+            r2 = requests.get(f"{_GITHUB_API}/repos/{_OWNER}/{_REPO}/releases", headers=headers, timeout=10)
+            r2.raise_for_status()
+            rels = r2.json()
+            rel = None
+            for rr in rels:
+                if rr.get("draft"):
+                    continue
+                if rr.get("prerelease"):
+                    continue
+                rel = rr
+                break
+            if not rel:
+                return False, ""
+    except Exception:
+        return False, ""
+
+    tag = rel.get("tag_name") or rel.get("name") or ""
+    latest = tag.lstrip("vV").strip()
+    if not latest:
+        return False, ""
+    try:
+        has = parse_version(latest) > parse_version(current_version.lstrip("vV").strip())
+    except Exception:
+        has = latest != current_version.lstrip("vV").strip()
+    return has, latest
 
 def normalize_height(img, target_h, bg):
     w, h = img.size
@@ -252,13 +299,15 @@ def print_help():
                 因此，该模式下输入的任何数据都会被-75px，下限为0.
                 另外，为防止过度拉伸，所有图片长度将被固定在32800px。
 {Color.OKCYAN}【注意事项】{Color.ENDC}
+  0. 处理或覆盖前请备份原图片。
   1. 仅支持 PNG 图片（RGBA 模式），背景色以左上角第一个像素为准。
   2. 图片高度不得小于 1000 像素，否则可能无法正确识别结构。
   3. 处理后的图片默认保存在当前目录，命名格式为：
         output-原文件名-新d值px.png     （Stable模式）
         output-原文件名-新d值px-lzr.png （Lazer 模式）
   4. 如果原图不符合预期结构（例如找不到面尾/面身），程序会报错并返回菜单。
-  5. 如果你遇到任何问题，请在GitHub仓库上提交issue或联系作者。
+  5. 本程序暂不支持渐变颜色面身、非单一颜色或含有图案面身的皮肤。
+  6. 如果你遇到任何问题，请在GitHub仓库上提交issue或联系作者。
 {Color.BOLD}{Color.OKGREEN}=============================={Color.ENDC}
 """
     print(help_text)
@@ -312,7 +361,8 @@ def main():
         print("  {0} - Stable 模式修改投机取巧程度".format(Color.OKBLUE + "2" + Color.ENDC))
         print("  {0} - Lazer 模式修改投机取巧程度".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - 更换图片".format(Color.OKBLUE + "4" + Color.ENDC))
-        print("  {0} - 退出".format(Color.OKBLUE + "5" + Color.ENDC))
+        print("  {0} - 检查更新".format(Color.OKBLUE + "5" + Color.ENDC))
+        print("  {0} - 退出".format(Color.OKBLUE + "6" + Color.ENDC))
         print("> ", end='', flush=True)
 
         choice = getch()
@@ -376,6 +426,19 @@ def main():
             current_image_path = None
             clear_screen()
         elif choice == '5':
+            print(f"\n{Color.OKBLUE}正在检查更新...{Color.ENDC}")
+            has, latest = check_update(VERSION)
+            if not latest:
+                print(f"{Color.FAIL}错误: 无法获取最新版本信息。{Color.ENDC}")
+            else:
+                if has:
+                    print(f"{Color.OKGREEN}检测到新版本：{latest}（当前：{VERSION}）{Color.ENDC}")
+                    print(f"请访问发布页面下载最新版本： https://github.com/{_OWNER}/{_REPO}/releases")
+                else:
+                    print(f"{Color.OKGREEN}已是最新版本：{VERSION}{Color.ENDC}")
+            input("按回车键继续...")
+            clear_screen()
+        elif choice == '6':
             print(f"{Color.OKGREEN}程序退出。{Color.ENDC}")
             break
         else:
