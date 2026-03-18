@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -211,9 +211,9 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
                 raise LNImageError("需要填充间隙，但面身不存在，无法截取。")
             if gap > body_h:
                 raise LNImageError("需要填充的间隙大于面身高度，无法单次截取。")
-            fill_region = body_region.crop((0, body_h - gap, x2 - x1 + 1, body_h))
+            fill_region = body_region.crop((0, 0, x2 - x1 + 1, gap))
             if body_h - gap > 0:
-                body_new = body_region.crop((0, 0, x2 - x1 + 1, body_h - gap))
+                body_new = body_region.crop((0, gap, x2 - x1 + 1, body_h))
             else:
                 body_new = None
         elif y_target > y:
@@ -317,7 +317,7 @@ def print_help():
 
 def main():
     clear_screen()
-    print(f"{Color.BOLD}{Color.HEADER}osu!mania 投皮调整工具{Color.ENDC}")
+    print(f"{Color.BOLD}{Color.HEADER}osu!mania 投皮调整工具 - v{VERSION}{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}作者: Leo_Black{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Github: LeoBlackMT/percy_skin_editor{Color.ENDC}")
     current_image_path = None
@@ -328,6 +328,7 @@ def main():
             print(f"\n对于Stable:\n游戏设置 - 皮肤 - 打开皮肤文件夹 - 找到skin.ini - 找到你想修改的key数(如Keys: 4) - 找到NoteImage*L,*是轨道序号 - 其对应的目录就是图片路径")
             print(f"\n对于Lazer:\n游戏设置 - 皮肤 - 打开皮肤编辑器 - 左上角文件 - 打开外部编辑 - 找到skin.ini -> 后续与Stable相同")
             print(f"\n如果未在skin.ini中找到NoteImage*L, 那么图片应该直接在皮肤目录下，名称为mania-note*L.png\n")
+            print(f"\n你可以随时使用 Ctrl+C 退出程序。\n")
             print(f"\n{Color.OKBLUE}请输入图片绝对/相对路径（或直接拖拽图片，输入 q 退出）:{Color.ENDC}")
             path = input().strip()
             if path.lower() == 'q':

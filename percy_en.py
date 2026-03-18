@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -211,9 +211,9 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
                 raise LNImageError("Need to fill the gap, but note body does not exist.")
             if gap > body_h:
                 raise LNImageError("The gap to be filled is larger than the note body height.")
-            fill_region = body_region.crop((0, body_h - gap, x2 - x1 + 1, body_h))
+            fill_region = body_region.crop((0, 0, x2 - x1 + 1, gap))
             if body_h - gap > 0:
-                body_new = body_region.crop((0, 0, x2 - x1 + 1, body_h - gap))
+                body_new = body_region.crop((0, gap, x2 - x1 + 1, body_h))
             else:
                 body_new = None
         elif y_target > y:
@@ -327,7 +327,7 @@ def print_help():
 
 def main():
     clear_screen()
-    print(f"{Color.BOLD}{Color.HEADER}osu!mania Percy Skin Editor{Color.ENDC}")
+    print(f"{Color.BOLD}{Color.HEADER}osu!mania Percy Skin Editor - v{VERSION}{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Author: Leo_Black{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Github: LeoBlackMT/percy_skin_editor{Color.ENDC}")
     current_image_path = None
@@ -338,6 +338,7 @@ def main():
             print(f"\nFor Stable:\nGame Settings - Skins - Open Skin Folder - Find skin.ini - Find your desired key mode (e.g., Keys: 4) - Find NoteImage*L (* is the track number) - The corresponding directory is the image path")
             print(f"\nFor Lazer:\nGame Settings - Skins - Open Skin Editor - Top-left File menu - Edit Externally - Find skin.ini -> Then follow the same steps as Stable")
             print(f"\nIf 'NoteImage*L' is not found in skin.ini, the image should be directly in the skin folder named 'mania-note*L.png'\n")
+            print(f"\nYou can use Ctrl+C to exit the program at any time.\n")
             print(f"\n{Color.OKBLUE}Enter the absolute/relative path to the image (or drag the image directly, input 'q' to quit):{Color.ENDC}")
             path = input().strip()
             if path.lower() == 'q':
