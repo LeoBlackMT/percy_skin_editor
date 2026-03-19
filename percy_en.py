@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -303,7 +303,7 @@ def print_help():
     • Stable Mode: Directly sets a new d value. The program automatically adjusts the
         note tail and body.
     • Lazer Mode: Based on current measurements, the Lazer version in early 2026 may
-        incorrectly stretch non-percy skins by about 75px.
+        incorrectly stretch percy skins by about 75px.
         Therefore, any input in this mode is reduced by 75px, with a minimum of 0.
         To prevent excessive stretching, all images are normalized to a fixed height of 32800px.
 {Color.OKCYAN}【Important Notes】{Color.ENDC}
@@ -333,6 +333,7 @@ def main():
     print(f"{Color.BOLD}{Color.HEADER}Author: Leo_Black{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Github: LeoBlackMT/percy_skin_editor{Color.ENDC}")
     current_image_path = None
+    current_mode = "stable"
 
     while True:
         if current_image_path is None:
@@ -368,11 +369,13 @@ def main():
             
         clear_screen()
         print(f"\n{Color.OKGREEN}Current image: {Color.BOLD}{current_image_path}{Color.ENDC}")
+        mode_label = "Stable" if current_mode == "stable" else "Lazer"
+        print(f"{Color.OKGREEN}Current mode: {Color.BOLD}{mode_label}{Color.ENDC}")
         print(f"{Color.OKCYAN}Please select an operation:{Color.ENDC}")
         print("  {0} - Help".format(Color.WARNING + "0" + Color.ENDC))
-        print("  {0} - View current cut-off value".format(Color.OKBLUE + "1" + Color.ENDC))
-        print("  {0} - Stable Mode: Adjust cut-off value".format(Color.OKBLUE + "2" + Color.ENDC))
-        print("  {0} - Lazer Mode: Adjust cut-off value".format(Color.OKBLUE + "3" + Color.ENDC))
+        print("  {0} - Switch mode".format(Color.OKBLUE + "1" + Color.ENDC))
+        print("  {0} - View current cut-off value".format(Color.OKBLUE + "2" + Color.ENDC))
+        print("  {0} - Adjust cut-off value".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - Switch image".format(Color.OKBLUE + "4" + Color.ENDC))
         print("  {0} - Check updates".format(Color.OKBLUE + "5" + Color.ENDC))
         print("  {0} - Quit".format(Color.OKBLUE + "6" + Color.ENDC))
@@ -386,36 +389,27 @@ def main():
             print_help()
             clear_screen()
         elif choice == '1':
+            current_mode = "lazer" if current_mode == "stable" else "stable"
+            switched_label = "Stable" if current_mode == "stable" else "Lazer"
+            print(f"\n{Color.OKGREEN}Switched to {switched_label} mode.{Color.ENDC}")
+            input("Press Enter to continue...")
+            clear_screen()
+        elif choice == '2':
             try:
                 d = get_current_d(current_image_path)
-                print(f"\n{Color.OKGREEN}Current cut-off value: d = {d}px{Color.ENDC}")
+                if current_mode == "lazer":
+                    d += 75
+                print(f"\n{Color.OKGREEN}Current cut-off value: d = {d}px ({mode_label}){Color.ENDC}")
             except Exception as e:
                 print(f"\n{Color.FAIL}Failed to get cut-off value: {e}{Color.ENDC}")
             input("Press Enter to continue...")
             clear_screen()
-        elif choice == '2':
-            print(f"\n{Color.OKBLUE}Enter new cut-off value (integer): {Color.ENDC}", end='', flush=True)
-            try:
-                new_d_str = input().strip()
-                new_d = int(new_d_str)
-            except ValueError:
-                print(f"{Color.FAIL}Invalid input. Please enter an integer.{Color.ENDC}")
-                input("Press Enter to continue...")
-                clear_screen()
-                continue
-            try:
-                base = os.path.basename(current_image_path)
-                name, _ = os.path.splitext(base)
-                output_name = f"output-{name}-{new_d}px.png"
-                output_path = os.path.join(os.getcwd(), output_name)
-                process_ln_image(current_image_path, new_d, lzr=False, output_path=output_path)
-                print(f"{Color.OKGREEN}Processing complete. Saved to: {output_path}{Color.ENDC}")
-            except Exception as e:
-                print(f"{Color.FAIL}Processing failed: {e}{Color.ENDC}")
-            input("Press Enter to continue...")
-            clear_screen()
         elif choice == '3':
-            print(f"\n{Color.OKBLUE}Enter new cut-off value (integer, minimum 75): {Color.ENDC}", end='', flush=True)
+            if current_mode == "lazer":
+                prompt = "Enter new cut-off value (integer, minimum 75): "
+            else:
+                prompt = "Enter new cut-off value (integer): "
+            print(f"\n{Color.OKBLUE}{prompt}{Color.ENDC}", end='', flush=True)
             try:
                 new_d_str = input().strip()
                 new_d = int(new_d_str)
@@ -424,12 +418,20 @@ def main():
                 input("Press Enter to continue...")
                 clear_screen()
                 continue
+            if current_mode == "lazer" and new_d < 75:
+                print(f"{Color.FAIL}In Lazer mode, the minimum d is 75.{Color.ENDC}")
+                input("Press Enter to continue...")
+                clear_screen()
+                continue
             try:
                 base = os.path.basename(current_image_path)
                 name, _ = os.path.splitext(base)
-                output_name = f"output-{name}-{new_d}px-lzr.png"
+                if current_mode == "lazer":
+                    output_name = f"output-{name}-{new_d}px-lzr.png"
+                else:
+                    output_name = f"output-{name}-{new_d}px.png"
                 output_path = os.path.join(os.getcwd(), output_name)
-                process_ln_image(current_image_path, new_d, lzr=True, output_path=output_path)
+                process_ln_image(current_image_path, new_d, lzr=(current_mode == "lazer"), output_path=output_path)
                 print(f"{Color.OKGREEN}Processing complete. Saved to: {output_path}{Color.ENDC}")
             except Exception as e:
                 print(f"{Color.FAIL}Processing failed: {e}{Color.ENDC}")
@@ -446,7 +448,7 @@ def main():
             else:
                 if has:
                     print(f"{Color.OKGREEN}New version detected: {latest} (current: {VERSION}){Color.ENDC}")
-                    print(f"Please visit the releases page to download the latest build: https://github.com/{_OWNER}/{_REPO}/releases")
+                    print(f"Please visit the releases page to download the latest build: https://github.com/{_OWNER}/{_REPO}/releases/latest")
                 else:
                     print(f"{Color.OKGREEN}You are already on the latest version: {VERSION}{Color.ENDC}")
             input("Press Enter to continue...")

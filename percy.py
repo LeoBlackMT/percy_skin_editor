@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -297,7 +297,7 @@ def print_help():
   • 在本程序中，使用 d 来代替这个值。
 {Color.OKCYAN}【模式说明】{Color.ENDC}
   • Stable 模式 : 直接设置新的 d 值，程序自动移动面尾和面身。
-  • Lazer 模式 : 根据我的测定，26年初的lazer版本会使无投皮肤错误拉伸。大致为stb+75px。
+  • Lazer 模式 : 根据我的测定，26年初的lazer版本会使皮肤错误拉伸。大致为stb+75px。
                 因此，该模式下输入的任何数据都会被-75px，下限为0.
                 另外，为防止过度拉伸，所有图片长度将被固定在32800px。
 {Color.OKCYAN}【注意事项】{Color.ENDC}
@@ -323,6 +323,7 @@ def main():
     print(f"{Color.BOLD}{Color.HEADER}作者: Leo_Black{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Github: LeoBlackMT/percy_skin_editor{Color.ENDC}")
     current_image_path = None
+    current_mode = "stable"
 
     while True:
         if current_image_path is None:
@@ -358,11 +359,13 @@ def main():
             
         clear_screen()
         print(f"\n{Color.OKGREEN}当前图片: {Color.BOLD}{current_image_path}{Color.ENDC}")
+        mode_label = "Stable" if current_mode == "stable" else "Lazer"
+        print(f"{Color.OKGREEN}当前模式: {Color.BOLD}{mode_label}{Color.ENDC}")
         print(f"{Color.OKCYAN}请选择操作:{Color.ENDC}")
         print("  {0} - 帮助".format(Color.WARNING + "0" + Color.ENDC))
-        print("  {0} - 查看当前投机取巧程度".format(Color.OKBLUE + "1" + Color.ENDC))
-        print("  {0} - Stable 模式修改投机取巧程度".format(Color.OKBLUE + "2" + Color.ENDC))
-        print("  {0} - Lazer 模式修改投机取巧程度".format(Color.OKBLUE + "3" + Color.ENDC))
+        print("  {0} - 切换模式".format(Color.OKBLUE + "1" + Color.ENDC))
+        print("  {0} - 查看当前投机取巧程度".format(Color.OKBLUE + "2" + Color.ENDC))
+        print("  {0} - 修改投机取巧程度".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - 更换图片".format(Color.OKBLUE + "4" + Color.ENDC))
         print("  {0} - 检查更新".format(Color.OKBLUE + "5" + Color.ENDC))
         print("  {0} - 退出".format(Color.OKBLUE + "6" + Color.ENDC))
@@ -376,36 +379,27 @@ def main():
             print_help()
             clear_screen()
         elif choice == '1':
+            current_mode = "lazer" if current_mode == "stable" else "stable"
+            switched_label = "Stable" if current_mode == "stable" else "Lazer"
+            print(f"\n{Color.OKGREEN}已切换到 {switched_label} 模式。{Color.ENDC}")
+            input("按回车键继续...")
+            clear_screen()
+        elif choice == '2':
             try:
                 d = get_current_d(current_image_path)
-                print(f"\n{Color.OKGREEN}当前投机取巧程度 d = {d}px{Color.ENDC}")
+                if current_mode == "lazer":
+                    d += 75
+                print(f"\n{Color.OKGREEN}当前投机取巧程度 d = {d}px（{mode_label}）{Color.ENDC}")
             except Exception as e:
                 print(f"\n{Color.FAIL}获取 d 失败: {e}{Color.ENDC}")
             input("按回车键继续...")
             clear_screen()
-        elif choice == '2':
-            print(f"\n{Color.OKBLUE}请输入新的 d 值 (整数): {Color.ENDC}", end='', flush=True)
-            try:
-                new_d_str = input().strip()
-                new_d = int(new_d_str)
-            except ValueError:
-                print(f"{Color.FAIL}输入无效，请输入整数。{Color.ENDC}")
-                input("按回车键继续...")
-                clear_screen()
-                continue
-            try:
-                base = os.path.basename(current_image_path)
-                name, _ = os.path.splitext(base)
-                output_name = f"output-{name}-{new_d}px.png"
-                output_path = os.path.join(os.getcwd(), output_name)
-                process_ln_image(current_image_path, new_d, lzr=False, output_path=output_path)
-                print(f"{Color.OKGREEN}处理完成，已保存至: {output_path}{Color.ENDC}")
-            except Exception as e:
-                print(f"{Color.FAIL}处理失败: {e}{Color.ENDC}")
-            input("按回车键继续...")
-            clear_screen()
         elif choice == '3':
-            print(f"\n{Color.OKBLUE}请输入新的 d 值 (整数, 最小值为75): {Color.ENDC}", end='', flush=True)
+            if current_mode == "lazer":
+                prompt = "请输入新的 d 值 (整数, 最小值为75): "
+            else:
+                prompt = "请输入新的 d 值 (整数): "
+            print(f"\n{Color.OKBLUE}{prompt}{Color.ENDC}", end='', flush=True)
             try:
                 new_d_str = input().strip()
                 new_d = int(new_d_str)
@@ -414,12 +408,20 @@ def main():
                 input("按回车键继续...")
                 clear_screen()
                 continue
+            if current_mode == "lazer" and new_d < 75:
+                print(f"{Color.FAIL}Lazer 模式下 d 的最小值为 75。{Color.ENDC}")
+                input("按回车键继续...")
+                clear_screen()
+                continue
             try:
                 base = os.path.basename(current_image_path)
                 name, _ = os.path.splitext(base)
-                output_name = f"output-{name}-{new_d}px-lzr.png"
+                if current_mode == "lazer":
+                    output_name = f"output-{name}-{new_d}px-lzr.png"
+                else:
+                    output_name = f"output-{name}-{new_d}px.png"
                 output_path = os.path.join(os.getcwd(), output_name)
-                process_ln_image(current_image_path, new_d, lzr=True, output_path=output_path)
+                process_ln_image(current_image_path, new_d, lzr=(current_mode == "lazer"), output_path=output_path)
                 print(f"{Color.OKGREEN}处理完成，已保存至: {output_path}{Color.ENDC}")
             except Exception as e:
                 print(f"{Color.FAIL}处理失败: {e}{Color.ENDC}")
@@ -436,7 +438,7 @@ def main():
             else:
                 if has:
                     print(f"{Color.OKGREEN}检测到新版本：{latest}（当前：{VERSION}）{Color.ENDC}")
-                    print(f"请访问发布页面下载最新版本： https://github.com/{_OWNER}/{_REPO}/releases")
+                    print(f"请访问发布页面下载最新版本： https://github.com/{_OWNER}/{_REPO}/releases/latest")
                 else:
                     print(f"{Color.OKGREEN}已是最新版本：{VERSION}{Color.ENDC}")
             input("按回车键继续...")
