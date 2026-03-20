@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -190,7 +190,7 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
     y2 = find_background_upwards(x2, mid_y)
     y = max(y1, y2)
 
-    if y > a_true:
+    if y > a_true + 1:
         if lzr:
             a_target = max(0, user_d - 75)
         else:
