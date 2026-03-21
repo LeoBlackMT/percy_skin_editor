@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -29,6 +29,82 @@ def getch():
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+def normalize_input_path(path: str):
+    path = path.strip()
+    if path.startswith('"') and path.endswith('"'):
+        path = path[1:-1]
+    elif path.startswith("'") and path.endswith("'"):
+        path = path[1:-1]
+    return path
+
+def get_output_dir():
+    output_dir = os.path.join(os.getcwd(), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+def build_output_path(source_path, d_value, lzr=False):
+    base = os.path.basename(source_path)
+    name, _ = os.path.splitext(base)
+    if lzr:
+        output_name = f"{name}-{d_value}px-lzr.png"
+    else:
+        output_name = f"{name}-{d_value}px.png"
+    return os.path.join(get_output_dir(), output_name)
+
+def collect_png_targets(path):
+    if os.path.isfile(path):
+        if os.path.splitext(path)[1].lower() != '.png':
+            raise LNImageError("仅支持 PNG 格式图片。")
+        return [path], "file"
+    if os.path.isdir(path):
+        pngs = []
+        for name in sorted(os.listdir(path)):
+            full = os.path.join(path, name)
+            if os.path.isfile(full) and os.path.splitext(name)[1].lower() == '.png':
+                pngs.append(full)
+        if not pngs:
+            raise LNImageError("目录下未找到 PNG 文件。")
+        return pngs, "dir"
+    raise LNImageError("路径不存在，请重新输入。")
+
+def validate_image_height(path):
+    try:
+        with Image.open(path) as tmp:
+            if tmp.height < 1000:
+                raise LNImageError(f"图片高度小于 1000 像素，无法处理: {path}")
+    except LNImageError:
+        raise
+    except Exception as e:
+        raise LNImageError(f"无法打开图片 {path}: {e}")
+
+def confirm_action(prompt):
+    print(f"{Color.WARNING}{prompt}{Color.ENDC}")
+    ans = input("输入 y 确认，其他任意键取消: ").strip().lower()
+    return ans == 'y'
+
+def process_targets(targets, d_value, lzr=False):
+    success = 0
+    failed = 0
+    errors = []
+    last_output_path = ""
+    for src in targets:
+        try:
+            output_path = build_output_path(src, d_value, lzr=lzr)
+            process_ln_image(src, d_value, lzr=lzr, output_path=output_path)
+            success += 1
+            last_output_path = output_path
+        except Exception as e:
+            failed += 1
+            errors.append((src, str(e)))
+    return success, failed, errors, last_output_path
+
+def build_d_values(start_value, end_value, step):
+    if step == 0:
+        raise LNImageError("步长不能为 0。")
+    if start_value <= end_value:
+        return list(range(start_value, end_value + 1, step))
+    return list(range(start_value, end_value - 1, -step))
 
 class Color:
     HEADER = '\033[95m'
@@ -300,16 +376,30 @@ def print_help():
   • Lazer 模式 : 根据我的测定，26年初的lazer版本会使皮肤错误拉伸。大致为stb+75px。
                 因此，该模式下输入的任何数据都会被-75px，下限为0.
                 另外，为防止过度拉伸，所有图片长度将被固定在32800px。
+{Color.OKCYAN}【菜单说明】{Color.ENDC}
+  • 0 - 帮助 : 显示本说明页。
+  • 1 - 切换模式 : 在 Stable 和 Lazer 之间切换。注意 Lazer 模式下 d 最小为 75。
+  • 2 - 查看当前投机取巧程度 : 仅单图模式可用；目录批处理模式下不可用。
+  • 3 - 修改投机取巧程度 :
+        单图模式会输出 1 张结果图；目录模式会对该目录下所有 PNG 进行同一 d 的批处理。
+        结果统一输出到 output 文件夹。
+  • 4 - 单图批量生成 :
+        仅单图模式可用。输入起始值、终止值、步长生成列表后，会按其逐个生成多张图。
+        步长不能为 0；若数量较多会再次提示确认。
+  • 5 - 更换图片 : 重新选择单个 PNG 或文件夹路径。
+  • 6 - 检查更新 : 从 GitHub 获取最新发布版本信息。
+  • 7 - 退出 : 关闭程序。
 {Color.OKCYAN}【注意事项】{Color.ENDC}
   0. 处理或覆盖前请备份原图片。
   1. 仅支持 PNG 图片（RGBA 模式），背景色以左上角第一个像素为准。
   2. 图片高度不得小于 1000 像素，否则可能无法正确识别结构。
-  3. 处理后的图片默认保存在当前目录，命名格式为：
-        output-原文件名-新d值px.png     （Stable模式）
-        output-原文件名-新d值px-lzr.png （Lazer 模式）
+  3. 处理后的图片默认保存在当前目录下的 output 文件夹，命名格式为：
+      原文件名-新d值px.png      （Stable模式）
+      原文件名-新d值px-lzr.png  （Lazer 模式）
   4. 如果原图不符合预期结构（例如找不到面尾/面身），程序会报错并返回菜单。
   5. 本程序暂不支持渐变颜色面身、非单一颜色或含有图案面身的皮肤。
-  6. 如果你遇到任何问题，请在GitHub仓库上提交issue或联系作者。
+  6. 输入文件夹路径时会批处理该目录下所有 .png 文件（不递归子目录）。
+  7. 如果你遇到任何问题，请在GitHub仓库上提交issue或联系作者。
 {Color.BOLD}{Color.OKGREEN}=============================={Color.ENDC}
 """
     print(help_text)
@@ -323,6 +413,8 @@ def main():
     print(f"{Color.BOLD}{Color.HEADER}作者: Leo_Black{Color.ENDC}")
     print(f"{Color.BOLD}{Color.HEADER}Github: LeoBlackMT/percy_skin_editor{Color.ENDC}")
     current_image_path = None
+    current_targets = []
+    current_source_type = "file"
     current_mode = "stable"
 
     while True:
@@ -332,33 +424,32 @@ def main():
             print(f"\n对于Lazer:\n游戏设置 - 皮肤 - 打开皮肤编辑器 - 左上角文件 - 打开外部编辑 - 找到skin.ini -> 后续与Stable相同")
             print(f"\n如果未在skin.ini中找到NoteImage*L, 那么图片应该直接在皮肤目录下，名称为mania-note*L.png\n")
             print(f"\n你可以随时使用 Ctrl+C 退出程序。\n")
-            print(f"\n{Color.OKBLUE}请输入图片绝对/相对路径（或直接拖拽图片，输入 q 退出）:{Color.ENDC}")
+            print(f"\n{Color.OKBLUE}请输入图片或文件夹绝对/相对路径（或直接拖拽，输入 q 退出）:{Color.ENDC}")
             path = input().strip()
             if path.lower() == 'q':
                 break
-            if path.startswith('"') and path.endswith('"'):
-                path = path[1:-1]
-            elif path.startswith("'") and path.endswith("'"):
-                path = path[1:-1]
-            if not os.path.isfile(path):
-                print(f"{Color.FAIL}文件不存在，请重新输入。{Color.ENDC}")
-                continue
-            ext = os.path.splitext(path)[1].lower()
-            if ext != '.png':
-                print(f"{Color.FAIL}仅支持 PNG 格式图片。{Color.ENDC}")
-                continue
+            path = normalize_input_path(path)
             try:
-                with Image.open(path) as tmp:
-                    if tmp.height < 1000:
-                        print(f"{Color.FAIL}图片高度小于 1000 像素，可能无法正确处理。{Color.ENDC}")
+                targets, source_type = collect_png_targets(path)
+                if source_type == "dir":
+                    if not confirm_action(f"警告: 检测到文件夹，将批处理该目录下 {len(targets)} 个 .png 文件。是否继续？"):
+                        clear_screen()
                         continue
+                for t in targets:
+                    validate_image_height(t)
             except Exception as e:
-                print(f"{Color.FAIL}无法打开图片: {e}{Color.ENDC}")
+                print(f"{Color.FAIL}{e}{Color.ENDC}")
                 continue
             current_image_path = path
+            current_targets = targets
+            current_source_type = source_type
             
         clear_screen()
-        print(f"\n{Color.OKGREEN}当前图片: {Color.BOLD}{current_image_path}{Color.ENDC}")
+        if current_source_type == "dir":
+            print(f"\n{Color.OKGREEN}当前目录: {Color.BOLD}{current_image_path}{Color.ENDC}")
+            print(f"{Color.OKGREEN}待处理图片数量: {Color.BOLD}{len(current_targets)}{Color.ENDC}")
+        else:
+            print(f"\n{Color.OKGREEN}当前图片: {Color.BOLD}{current_image_path}{Color.ENDC}")
         mode_label = "Stable" if current_mode == "stable" else "Lazer"
         print(f"{Color.OKGREEN}当前模式: {Color.BOLD}{mode_label}{Color.ENDC}")
         print(f"{Color.OKCYAN}请选择操作:{Color.ENDC}")
@@ -366,9 +457,10 @@ def main():
         print("  {0} - 切换模式".format(Color.OKBLUE + "1" + Color.ENDC))
         print("  {0} - 查看当前投机取巧程度".format(Color.OKBLUE + "2" + Color.ENDC))
         print("  {0} - 修改投机取巧程度".format(Color.OKBLUE + "3" + Color.ENDC))
-        print("  {0} - 更换图片".format(Color.OKBLUE + "4" + Color.ENDC))
-        print("  {0} - 检查更新".format(Color.OKBLUE + "5" + Color.ENDC))
-        print("  {0} - 退出".format(Color.OKBLUE + "6" + Color.ENDC))
+        print("  {0} - 单图批量生成".format(Color.OKBLUE + "4" + Color.ENDC))
+        print("  {0} - 更换图片".format(Color.OKBLUE + "5" + Color.ENDC))
+        print("  {0} - 检查更新".format(Color.OKBLUE + "6" + Color.ENDC))
+        print("  {0} - 退出".format(Color.OKBLUE + "7" + Color.ENDC))
         print("> ", end='', flush=True)
 
         choice = getch()
@@ -385,6 +477,11 @@ def main():
             input("按回车键继续...")
             clear_screen()
         elif choice == '2':
+            if current_source_type == "dir":
+                print(f"\n{Color.WARNING}当前为目录批处理模式，无法显示单个 d。请切换为单图或直接执行处理。{Color.ENDC}")
+                input("按回车键继续...")
+                clear_screen()
+                continue
             try:
                 d = get_current_d(current_image_path)
                 if current_mode == "lazer":
@@ -414,23 +511,103 @@ def main():
                 clear_screen()
                 continue
             try:
-                base = os.path.basename(current_image_path)
-                name, _ = os.path.splitext(base)
-                if current_mode == "lazer":
-                    output_name = f"output-{name}-{new_d}px-lzr.png"
+                if current_source_type == "dir":
+                    if not confirm_action(f"警告: 即将处理 {len(current_targets)} 张图片，输出到 output 文件夹。是否继续？"):
+                        clear_screen()
+                        continue
+
+                success, failed, errors, last_output_path = process_targets(
+                    current_targets,
+                    new_d,
+                    lzr=(current_mode == "lazer")
+                )
+
+                if failed == 0:
+                    if success == 1:
+                        print(f"{Color.OKGREEN}处理完成，已保存至: {last_output_path}{Color.ENDC}")
+                    else:
+                        print(f"{Color.OKGREEN}处理完成，共成功 {success} 张。输出目录: {get_output_dir()}{Color.ENDC}")
                 else:
-                    output_name = f"output-{name}-{new_d}px.png"
-                output_path = os.path.join(os.getcwd(), output_name)
-                process_ln_image(current_image_path, new_d, lzr=(current_mode == "lazer"), output_path=output_path)
-                print(f"{Color.OKGREEN}处理完成，已保存至: {output_path}{Color.ENDC}")
+                    print(f"{Color.WARNING}处理结束：成功 {success} 张，失败 {failed} 张。{Color.ENDC}")
+                    for src, err in errors:
+                        print(f"{Color.FAIL}失败: {src} -> {err}{Color.ENDC}")
+                    print(f"{Color.OKGREEN}成功输出目录: {get_output_dir()}{Color.ENDC}")
             except Exception as e:
                 print(f"{Color.FAIL}处理失败: {e}{Color.ENDC}")
             input("按回车键继续...")
             clear_screen()
         elif choice == '4':
-            current_image_path = None
+            if current_source_type != "file":
+                print(f"{Color.FAIL}该功能仅支持单个图片。请先选择单图。{Color.ENDC}")
+                input("按回车键继续...")
+                clear_screen()
+                continue
+
+            print(f"\n{Color.OKBLUE}请输入起始值（非负整数）:{Color.ENDC}", end='', flush=True)
+            start_str = input().strip()
+            print(f"{Color.OKBLUE}请输入终止值（非负整数）:{Color.ENDC}", end='', flush=True)
+            end_str = input().strip()
+            print(f"{Color.OKBLUE}请输入步长（非负整数，且不能为0）:{Color.ENDC}", end='', flush=True)
+            step_str = input().strip()
+
+            try:
+                start_value = int(start_str)
+                end_value = int(end_str)
+                step = int(step_str)
+                if start_value < 0 or end_value < 0 or step < 0:
+                    raise LNImageError("起始值、终止值、步长必须都是非负整数。")
+                if step == 0:
+                    raise LNImageError("步长不能为 0。")
+                d_values = build_d_values(start_value, end_value, step)
+                if not d_values:
+                    raise LNImageError("生成列表为空，请检查参数。")
+                if current_mode == "lazer" and min(d_values) < 75:
+                    raise LNImageError("Lazer 模式下 d 的最小值为 75。")
+            except Exception as e:
+                print(f"{Color.FAIL}输入无效: {e}{Color.ENDC}")
+                input("按回车键继续...")
+                clear_screen()
+                continue
+
+            total = len(d_values)
+            print(f"{Color.OKCYAN}本次将使用列表: {d_values}{Color.ENDC}")
+            if not confirm_action(f"警告: 将基于当前单图生成 {total} 张结果图。是否继续？"):
+                clear_screen()
+                continue
+            if total > 10:
+                if not confirm_action(f"再次警告: 本次将生成 {total} 张图片，可能需要一些时间。是否继续？"):
+                    clear_screen()
+                    continue
+
+            success = 0
+            failed = 0
+            errors = []
+            for d_value in d_values:
+                s, f, err_list, _ = process_targets(
+                    current_targets,
+                    d_value,
+                    lzr=(current_mode == "lazer")
+                )
+                success += s
+                failed += f
+                errors.extend(err_list)
+
+            if failed == 0:
+                print(f"{Color.OKGREEN}批量生成完成，共成功 {success} 张。输出目录: {get_output_dir()}{Color.ENDC}")
+            else:
+                print(f"{Color.WARNING}批量生成结束：成功 {success} 张，失败 {failed} 张。{Color.ENDC}")
+                for src, err in errors:
+                    print(f"{Color.FAIL}失败: {src} -> {err}{Color.ENDC}")
+                print(f"{Color.OKGREEN}已成功输出部分结果到: {get_output_dir()}{Color.ENDC}")
+
+            input("按回车键继续...")
             clear_screen()
         elif choice == '5':
+            current_image_path = None
+            current_targets = []
+            current_source_type = "file"
+            clear_screen()
+        elif choice == '6':
             print(f"\n{Color.OKBLUE}正在检查更新...{Color.ENDC}")
             has, latest = check_update(VERSION)
             if not latest:
@@ -443,7 +620,7 @@ def main():
                     print(f"{Color.OKGREEN}已是最新版本：{VERSION}{Color.ENDC}")
             input("按回车键继续...")
             clear_screen()
-        elif choice == '6':
+        elif choice == '7':
             print(f"{Color.OKGREEN}程序退出。{Color.ENDC}")
             break
         else:
