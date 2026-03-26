@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -52,6 +52,15 @@ def build_output_path(source_path, d_value, lzr=False):
         output_name = f"{name}-{d_value}px.png"
     return os.path.join(get_output_dir(), output_name)
 
+def build_normalize_output_path(source_path, lzr=False):
+    base = os.path.basename(source_path)
+    name, _ = os.path.splitext(base)
+    if lzr:
+        output_name = f"{name}-lzr-normalized.png"
+    else:
+        output_name = f"{name}-stable-tail-fixed.png"
+    return os.path.join(get_output_dir(), output_name)
+
 def collect_png_targets(path):
     if os.path.isfile(path):
         if os.path.splitext(path)[1].lower() != '.png':
@@ -92,6 +101,22 @@ def process_targets(targets, d_value, lzr=False):
         try:
             output_path = build_output_path(src, d_value, lzr=lzr)
             process_ln_image(src, d_value, lzr=lzr, output_path=output_path)
+            success += 1
+            last_output_path = output_path
+        except Exception as e:
+            failed += 1
+            errors.append((src, str(e)))
+    return success, failed, errors, last_output_path
+
+def process_normalize_targets(targets, lzr=False):
+    success = 0
+    failed = 0
+    errors = []
+    last_output_path = ""
+    for src in targets:
+        try:
+            output_path = build_normalize_output_path(src, lzr=lzr)
+            normalize_image_file(src, lzr=lzr, output_path=output_path)
             success += 1
             last_output_path = output_path
         except Exception as e:
@@ -158,13 +183,16 @@ def check_update(current_version: str):
         has = latest != current_version.lstrip("vV").strip()
     return has, latest
 
-def normalize_height(img, target_h, bg):
+def normalize_height(img, bg, lzr=False):
     w, h = img.size
-    if h == target_h:
-        return img
-    if h > target_h:
-        return img.crop((0, 0, w, target_h))
-    else:
+
+    if lzr:
+        target_h = 32800
+        if h == target_h:
+            return img
+        if h > target_h:
+            return img.crop((0, 0, w, target_h))
+
         need = target_h - h
         new_img = Image.new("RGBA", (w, target_h), bg)
         new_img.paste(img, (0, 0))
@@ -176,6 +204,21 @@ def normalize_height(img, target_h, bg):
             y_offset += take
             need -= take
         return new_img
+
+    if h <= 32767:
+        return img
+
+    new_img = img.crop((0, 0, w, 32767))
+    new_img.paste((0, 0, 0, 0), (0, 32766, w, 32767))
+    return new_img
+
+def normalize_image_file(image_path, lzr=False, output_path=None):
+    img = Image.open(image_path).convert("RGBA")
+    bg = img.getpixel((0, 0))
+    fixed_img = normalize_height(img, bg, lzr=lzr)
+    if output_path:
+        fixed_img.save(output_path)
+    return fixed_img
 
 def get_current_d(image_path):
     """Return current cut-off value d of the image."""
@@ -357,7 +400,7 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
             new_img.paste(body_region, (x1, a_true))
 
     if lzr:
-        new_img = normalize_height(new_img, 32800, bg)
+        new_img = normalize_height(new_img, bg, lzr=True)
 
     if output_path:
         new_img.save(output_path)
@@ -392,9 +435,13 @@ def print_help():
     Only available in single-image mode.
     Input start, end, and step to generate a d list, then output one image per d.
     Step cannot be 0; for large counts there is an extra confirmation.
-  - 5 - Switch Image: Select a new PNG or directory path.
-  - 6 - Check Updates: Query latest release info from GitHub.
-  - 7 - Quit: Exit the program.
+  - 5 - Mode Fix Tool:
+    In Lazer mode, this shows "Stretch Repair" and runs Lazer normalization (fixed to 32800px).
+    In Stable mode, this shows "Fix Tail White Line" and runs Stable normalization
+    (crop if over 32767px and clear the last row).
+  - 6 - Switch Image: Select a new PNG or directory path.
+  - 7 - Check Updates: Query latest release info from GitHub.
+  - 8 - Quit: Exit the program.
 {Color.OKCYAN}[Notes]{Color.ENDC}
   0. Back up your original image before processing.
   1. PNG only (RGBA). Background color is the top-left pixel.
@@ -463,9 +510,14 @@ def main():
         print("  {0} - View current d".format(Color.OKBLUE + "2" + Color.ENDC))
         print("  {0} - Modify d".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - Single-image batch generation".format(Color.OKBLUE + "4" + Color.ENDC))
-        print("  {0} - Switch image".format(Color.OKBLUE + "5" + Color.ENDC))
-        print("  {0} - Check updates".format(Color.OKBLUE + "6" + Color.ENDC))
-        print("  {0} - Quit".format(Color.OKBLUE + "7" + Color.ENDC))
+        if current_mode == "lazer":
+            fix_label = "Stretch Repair"
+        else:
+            fix_label = "Fix Tail White Line"
+        print("  {0} - {1}".format(Color.OKBLUE + "5" + Color.ENDC, fix_label))
+        print("  {0} - Switch image".format(Color.OKBLUE + "6" + Color.ENDC))
+        print("  {0} - Check updates".format(Color.OKBLUE + "7" + Color.ENDC))
+        print("  {0} - Quit".format(Color.OKBLUE + "8" + Color.ENDC))
         print("> ", end='', flush=True)
 
         choice = getch()
@@ -608,11 +660,44 @@ def main():
             input("Press Enter to continue...")
             clear_screen()
         elif choice == '5':
+            if current_mode == "lazer":
+                fix_label = "Stretch Repair"
+                mode_is_lazer = True
+            else:
+                fix_label = "Fix Tail White Line"
+                mode_is_lazer = False
+
+            try:
+                if current_source_type == "dir":
+                    if not confirm_action(f"Warning: {len(current_targets)} images will run '{fix_label}' and be saved to output. Continue?"):
+                        clear_screen()
+                        continue
+
+                success, failed, errors, last_output_path = process_normalize_targets(
+                    current_targets,
+                    lzr=mode_is_lazer
+                )
+
+                if failed == 0:
+                    if success == 1:
+                        print(f"{Color.OKGREEN}{fix_label} completed. Saved to: {last_output_path}{Color.ENDC}")
+                    else:
+                        print(f"{Color.OKGREEN}{fix_label} completed. Successful: {success}. Output directory: {get_output_dir()}{Color.ENDC}")
+                else:
+                    print(f"{Color.WARNING}{fix_label} finished with partial failures: success {success}, failed {failed}.{Color.ENDC}")
+                    for src, err in errors:
+                        print(f"{Color.FAIL}Failed: {src} -> {err}{Color.ENDC}")
+                    print(f"{Color.OKGREEN}Successful outputs are in: {get_output_dir()}{Color.ENDC}")
+            except Exception as e:
+                print(f"{Color.FAIL}{fix_label} failed: {e}{Color.ENDC}")
+            input("Press Enter to continue...")
+            clear_screen()
+        elif choice == '6':
             current_image_path = None
             current_targets = []
             current_source_type = "file"
             clear_screen()
-        elif choice == '6':
+        elif choice == '7':
             print(f"\n{Color.OKBLUE}Checking for updates...{Color.ENDC}")
             has, latest = check_update(VERSION)
             if not latest:
@@ -625,7 +710,7 @@ def main():
                     print(f"{Color.OKGREEN}You are already on the latest version: {VERSION}{Color.ENDC}")
             input("Press Enter to continue...")
             clear_screen()
-        elif choice == '7':
+        elif choice == '8':
             print(f"{Color.OKGREEN}Program exited.{Color.ENDC}")
             break
         else:

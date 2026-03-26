@@ -4,7 +4,7 @@ import requests
 from packaging.version import parse as parse_version
 from PIL import Image
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 _OWNER = "LeoBlackMT"
 _REPO = "percy_skin_editor"
@@ -52,6 +52,15 @@ def build_output_path(source_path, d_value, lzr=False):
         output_name = f"{name}-{d_value}px.png"
     return os.path.join(get_output_dir(), output_name)
 
+def build_normalize_output_path(source_path, lzr=False):
+    base = os.path.basename(source_path)
+    name, _ = os.path.splitext(base)
+    if lzr:
+        output_name = f"{name}-lzr-normalized.png"
+    else:
+        output_name = f"{name}-stable-tail-fixed.png"
+    return os.path.join(get_output_dir(), output_name)
+
 def collect_png_targets(path):
     if os.path.isfile(path):
         if os.path.splitext(path)[1].lower() != '.png':
@@ -92,6 +101,22 @@ def process_targets(targets, d_value, lzr=False):
         try:
             output_path = build_output_path(src, d_value, lzr=lzr)
             process_ln_image(src, d_value, lzr=lzr, output_path=output_path)
+            success += 1
+            last_output_path = output_path
+        except Exception as e:
+            failed += 1
+            errors.append((src, str(e)))
+    return success, failed, errors, last_output_path
+
+def process_normalize_targets(targets, lzr=False):
+    success = 0
+    failed = 0
+    errors = []
+    last_output_path = ""
+    for src in targets:
+        try:
+            output_path = build_normalize_output_path(src, lzr=lzr)
+            normalize_image_file(src, lzr=lzr, output_path=output_path)
             success += 1
             last_output_path = output_path
         except Exception as e:
@@ -160,13 +185,16 @@ def check_update(current_version: str):
         has = latest != current_version.lstrip("vV").strip()
     return has, latest
 
-def normalize_height(img, target_h, bg):
+def normalize_height(img, bg, lzr=False):
     w, h = img.size
-    if h == target_h:
-        return img
-    if h > target_h:
-        return img.crop((0, 0, w, target_h))
-    else:
+
+    if lzr:
+        target_h = 32800
+        if h == target_h:
+            return img
+        if h > target_h:
+            return img.crop((0, 0, w, target_h))
+
         need = target_h - h
         new_img = Image.new("RGBA", (w, target_h), bg)
         new_img.paste(img, (0, 0))
@@ -178,6 +206,21 @@ def normalize_height(img, target_h, bg):
             y_offset += take
             need -= take
         return new_img
+
+    if h <= 32767:
+        return img
+
+    new_img = img.crop((0, 0, w, 32767))
+    new_img.paste((0, 0, 0, 0), (0, 32766, w, 32767))
+    return new_img
+
+def normalize_image_file(image_path, lzr=False, output_path=None):
+    img = Image.open(image_path).convert("RGBA")
+    bg = img.getpixel((0, 0))
+    fixed_img = normalize_height(img, bg, lzr=lzr)
+    if output_path:
+        fixed_img.save(output_path)
+    return fixed_img
 
 def get_current_d(image_path):
     """返回当前图片的投机取巧程度 d"""
@@ -356,7 +399,7 @@ def process_ln_image(image_path, user_d, lzr=False, output_path=None):
             new_img.paste(body_region, (x1, a_true))
 
     if lzr:
-        new_img = normalize_height(new_img, 32800, bg)
+        new_img = normalize_height(new_img, bg, lzr=True)
 
     if output_path:
         new_img.save(output_path)
@@ -386,9 +429,12 @@ def print_help():
   • 4 - 单图批量生成 :
         仅单图模式可用。输入起始值、终止值、步长生成列表后，会按其逐个生成多张图。
         步长不能为 0；若数量较多会再次提示确认。
-  • 5 - 更换图片 : 重新选择单个 PNG 或文件夹路径。
-  • 6 - 检查更新 : 从 GitHub 获取最新发布版本信息。
-  • 7 - 退出 : 关闭程序。
+  • 5 - 模式修复功能 :
+      Lazer 模式显示为“图片拉伸修复”，会执行 Lazer 标准化（固定到 32800px）。
+      Stable 模式显示为“修复面尾白线”，会执行 Stable 标准化（超过 32767px 时裁切并清空末行）。
+  • 6 - 更换图片 : 重新选择单个 PNG 或文件夹路径。
+  • 7 - 检查更新 : 从 GitHub 获取最新发布版本信息。
+  • 8 - 退出 : 关闭程序。
 {Color.OKCYAN}【注意事项】{Color.ENDC}
   0. 处理或覆盖前请备份原图片。
   1. 仅支持 PNG 图片（RGBA 模式），背景色以左上角第一个像素为准。
@@ -458,9 +504,14 @@ def main():
         print("  {0} - 查看当前投机取巧程度".format(Color.OKBLUE + "2" + Color.ENDC))
         print("  {0} - 修改投机取巧程度".format(Color.OKBLUE + "3" + Color.ENDC))
         print("  {0} - 单图批量生成".format(Color.OKBLUE + "4" + Color.ENDC))
-        print("  {0} - 更换图片".format(Color.OKBLUE + "5" + Color.ENDC))
-        print("  {0} - 检查更新".format(Color.OKBLUE + "6" + Color.ENDC))
-        print("  {0} - 退出".format(Color.OKBLUE + "7" + Color.ENDC))
+        if current_mode == "lazer":
+            fix_label = "图片拉伸修复"
+        else:
+            fix_label = "修复面尾白线"
+        print("  {0} - {1}".format(Color.OKBLUE + "5" + Color.ENDC, fix_label))
+        print("  {0} - 更换图片".format(Color.OKBLUE + "6" + Color.ENDC))
+        print("  {0} - 检查更新".format(Color.OKBLUE + "7" + Color.ENDC))
+        print("  {0} - 退出".format(Color.OKBLUE + "8" + Color.ENDC))
         print("> ", end='', flush=True)
 
         choice = getch()
@@ -603,11 +654,44 @@ def main():
             input("按回车键继续...")
             clear_screen()
         elif choice == '5':
+            if current_mode == "lazer":
+                fix_label = "图片拉伸修复"
+                mode_is_lazer = True
+            else:
+                fix_label = "修复面尾白线"
+                mode_is_lazer = False
+
+            try:
+                if current_source_type == "dir":
+                    if not confirm_action(f"警告: 即将对 {len(current_targets)} 张图片执行“{fix_label}”，输出到 output 文件夹。是否继续？"):
+                        clear_screen()
+                        continue
+
+                success, failed, errors, last_output_path = process_normalize_targets(
+                    current_targets,
+                    lzr=mode_is_lazer
+                )
+
+                if failed == 0:
+                    if success == 1:
+                        print(f"{Color.OKGREEN}{fix_label}完成，已保存至: {last_output_path}{Color.ENDC}")
+                    else:
+                        print(f"{Color.OKGREEN}{fix_label}完成，共成功 {success} 张。输出目录: {get_output_dir()}{Color.ENDC}")
+                else:
+                    print(f"{Color.WARNING}{fix_label}结束：成功 {success} 张，失败 {failed} 张。{Color.ENDC}")
+                    for src, err in errors:
+                        print(f"{Color.FAIL}失败: {src} -> {err}{Color.ENDC}")
+                    print(f"{Color.OKGREEN}成功输出目录: {get_output_dir()}{Color.ENDC}")
+            except Exception as e:
+                print(f"{Color.FAIL}{fix_label}失败: {e}{Color.ENDC}")
+            input("按回车键继续...")
+            clear_screen()
+        elif choice == '6':
             current_image_path = None
             current_targets = []
             current_source_type = "file"
             clear_screen()
-        elif choice == '6':
+        elif choice == '7':
             print(f"\n{Color.OKBLUE}正在检查更新...{Color.ENDC}")
             has, latest = check_update(VERSION)
             if not latest:
@@ -620,7 +704,7 @@ def main():
                     print(f"{Color.OKGREEN}已是最新版本：{VERSION}{Color.ENDC}")
             input("按回车键继续...")
             clear_screen()
-        elif choice == '7':
+        elif choice == '8':
             print(f"{Color.OKGREEN}程序退出。{Color.ENDC}")
             break
         else:
