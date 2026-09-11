@@ -220,3 +220,6 @@ _t/
 
 # PyInstaller onefile extraction leftovers (created when an exe runs)
 _MEI*/
+
+# Packaged executables: distributed via GitHub Releases, not via version control
+releases/
