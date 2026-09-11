@@ -1,14 +1,11 @@
 # Percy Skin Editor
 
-English users: scroll down to the English section.
-Note: I use AI translation for the English version, so there may be some inaccuracies. Please refer to the Chinese version for the most accurate information.
-
----
+[中文](README.md) | [English](README_EN.md)
 
 ### 介绍
 Percy Skin Editor 是一个用于 osu!mania 的投皮编辑工具。
 
-投皮（percy skin）是将 LN 面身拉伸到很长后，再通过顶部截断获得短尾视觉效果的做法。
+投皮（percy skin）是将 LN 面身拉伸到很长后，再通过顶部截断获得短尾视觉效果的做法，使玩家更好读懂LN谱面。
 本工具用于在stb和lzr下调整“投机取巧程度”，即 cut off by x pixels（从图片顶部到第一个非背景像素的距离）。
 
 ### 特性
@@ -17,70 +14,90 @@ Percy Skin Editor 是一个用于 osu!mania 的投皮编辑工具。
 - 自动检测 LN 结构，适应不同皮肤设计
 - 支持修复lazer中过度拉伸导致的视觉问题
 - 支持修复stable中面尾白线问题
+- 支持 常规 / 替换 两种输出模式，替换前自动备份原文件，方便直接修改既有皮肤
+- 自动检测并处理高度小于 1000px 的图片
+- 配置持久化（输出模式、输出文件夹、备份文件夹、界面语言）
 
 ### 环境要求
-- Python 3.8+
-- Pillow
-- requests
-- packaging
+- 64 位 Windows 系统（发行版 exe 为 64 位构建）
+- 无需安装 Python 或任何第三方依赖，exe 已内置完整运行环境
+- 除「检查更新」需要访问 GitHub 外，其余功能均可离线使用
 
-### 安装
+### 源码编译/使用
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 使用方法
-
-```bash
 python percy.py
 ```
 
+### 菜单与按键
+
+菜单上方始终显示当前输出模式。菜单为**单键触发**：按一个键立即执行，无需回车。
+
+| 按键 | 功能 |
+|---|---|
+| `?` | 帮助（半角 `?` 与全角 `？` 均可触发） |
+| `0` | 重置默认配置（需重启程序生效） |
+| `1` | 切换模式（Stable / Lazer） |
+| `2` | 查看当前投机取巧程度（单图显示该图的 d；目录模式逐张列出所有已选图片的 d） |
+| `3` | 修改投机取巧程度 |
+| `4` | 单图批量生成（仅单图模式） |
+| `5` | 模式修复功能（Stable 为“修复面尾白线”，Lazer 为“图片拉伸修复”） |
+| `6` | 调整输出模式 |
+| `7` | 调整输出/备份文件夹 |
+| `8` | 更换图片 |
+| `9` | 检查更新 |
+| `L` | 语言 / Language（切换界面语言：中文 / English） |
+| `Q` | 退出（保存配置） |
+
+需要输入文本的地方（图片/文件夹路径、d 值、批量生成的起止值与步长）仍然整行输入并回车确认；
+菜单 `7` 与菜单 `L` 中**留空（直接回车）即可返回上级菜单**。
+
+### 选择文件夹时
+
+选择文件夹后，程序会先列出命名匹配 `mania-note[数字]L` 或 `NoteImage*L` 的文件，
+并显示该目录的 PNG 总数，再让你确认修改范围：
+
+- `1` - 仅修改上面列出的匹配文件
+- `2` - 修改该目录下的全部图片文件
+- 直接回车 - 返回路径输入
+
+选中多个文件时，菜单 `2` 会逐张列出每张图片的投机取巧程度。
+
+### 输出模式
+
+- **常规模式（默认）**：处理结果输出到输出文件夹（默认 `/output`），不改动原文件。
+- **替换模式**：输出前先把所选原文件复制到备份文件夹（默认 `/backup-archive`）下的 `[备份时间戳]` 子文件夹，随后用输出文件替换原文件。
+
+细则：
+- 同一批处理的文件共用**同一个备份文件夹**
+- 替换模式确认输出前，会用醒目提示即将覆盖的原文件，并给出本次备份路径。
+- 替换成功后会显示备份位置：`/backup-archive/[备份时间戳]-replaced-file`。
+- 提示中的 `-replaced-file` / `-height-adjustment` 是**备份原因标记**，实际文件夹名为 `[备份时间戳]`。
+- 同一批次只保留最初版本的原文件：菜单 4 连续生成多张时，不会反复覆盖备份。
+
+### 处理高度小于 1000px 的图片
+
+处理到高度小于 1000px 的图片时，程序会**先列出所有需要修改的文件名**，然后让你选择：
+
+- `1 - 调整图片使其达到 1000px`：
+  1. 将原文件复制到 `/backup-archive/[备份时间戳]`；
+  2. 将图片纵向复制，副本紧贴不重叠；
+  3. 高度达到 1000px 时停止复制；
+  4. 输出结果替换原文件；
+  5. 提示 `图片已成功调整，原文件已保存至 /backup-archive/[备份时间戳]-height-adjustment`。
+- `2 - 返回`：返回文件选择输入界面，不做任何改动。
+
+### 配置文件
+
+- 配置文件为程序运行目录下的 `percy_config.json`，启动时读取、**退出时保存**。
+- 若该文件不存在，启动时会自动创建默认配置文件。
+- 默认值：输出模式 `常规模式`，输出文件夹 `/output`，备份文件夹 `/backup-archive`，语言 `中文`。
+- 输出/备份文件夹以 `/` 或 `\` 开头表示**相对于程序运行目录**；也可以直接填绝对路径。
+- 菜单 `0 - 重置默认配置` 需重启程序才能生效。
 
 ### 注意事项
-- 处理前请备份原图
+- 处理前请备份原图（替换模式虽会自动备份，仍建议自行留存）
 - 若 LN 结构不符合预期，处理可能失败
 - Lazer 模式会进行 -75px 修正（下限 0），同时将强制执行图片标准化（长度固定在32800px）。
 - 本程序暂不支持渐变颜色面身、非单一颜色或含有图案面身的皮肤。
-
----
-
-## English
-
-### Overview
-Percy Skin Editor is a utility for editing osu!mania LN skin images.
-
-A percy skin stretches the LN body to a very large height, then cuts from the top to create a short-tail visual effect.
-This tool adjusts the cut-off amount at the top of the image, i.e., cut off by x pixels (distance from image top to the first non-background pixel).
-
-### Features
-- Supports batch processing and batch generation
-- Supports both Stable and Lazer client
-- Automatically detects LN structure and adapts to different skin designs
-- Supports fixing visual issues caused by excessive stretching in Lazer
-- Supports fixing the tail white-line issue in Stable
-
-### Requirements
-- Python 3.8+
-- Pillow
-- requests
-- packaging
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-### Usage
-
-```bash
-python percy_en.py
-```
-
-### Notes
-- Back up original files before processing
-- Invalid LN structure may cause processing errors
-- Lazer mode applies a -75px correction (minimum 0), and normalizes all images to a fixed height of 32800px to prevent excessive stretching.
-- Stable mode keeps original behavior during normal processing; for white-line repair, if image height exceeds 32767px, content beyond 32767px is cropped and discarded, and the last row is set to fully transparent.
-- This program currently does not support gradient, patterned, or other complex non-uniform note bodies.
