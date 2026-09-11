@@ -5,7 +5,7 @@
 ### Overview
 Percy Skin Editor is a utility for editing osu!mania percy skin images.
 
-A percy skin stretches the LN body to a very large height, then cuts from the top to create a short-tail visual effect.
+A percy skin stretches the LN body to a very large height, then cuts from the top to create a short-tail visual effect, making LN charts easier to read.
 This tool adjusts the cut-off amount at the top of the image, i.e., cut off by x pixels (distance from the image top to the first non-background pixel).
 
 ### Features
@@ -19,10 +19,9 @@ This tool adjusts the cut-off amount at the top of the image, i.e., cut off by x
 - Persistent configuration (output mode, output folder, backup folder, UI language)
 
 ### Requirements
-- Python 3.8+
-- Pillow
-- requests
-- packaging
+- A 64-bit Windows system (the released executables are 64-bit builds)
+- No Python or third-party dependencies required; the executables bundle the complete runtime
+- Everything works offline except "Check updates", which needs access to GitHub
 
 ### Build from Source / Usage
 
@@ -59,11 +58,10 @@ The current output mode is always shown above the menu. The menu uses **whole-li
 - **Replace Mode**: before output, each selected original is copied into the backup folder (default `/backup-archive`) under a `[timestamp]` subfolder, then the output replaces the original file.
 
 Details:
-- All files in the same batch share **one timestamp folder**; small timing differences never split a batch.
-- Before the user confirms output, Replace Mode shows a bold red warning that originals will be overwritten, together with this run's backup path.
-- On success the original file location is reported as `/backup-archive/[timestamp]-replaced-file`.
+- All files in the same batch share **one backup folder**
+- Before confirming output, Replace Mode clearly indicates the original files that are about to be overwritten and shows this run's backup path.
+- On success the backup location is shown as `/backup-archive/[timestamp]-replaced-file`.
 - The `-replaced-file` / `-height-adjustment` markers describe the **reason for the backup**; the real folder name is `[timestamp]`.
-- In Replace Mode the output filename equals the original filename, so no suffix is asked.
 - A batch keeps only the very first original version: repeatedly generating from menu 4 does not overwrite the backup again.
 
 ### Handling Images Shorter Than 1000px
@@ -84,7 +82,7 @@ When an image shorter than 1000px is encountered, the tool **lists every file th
 - If the file does not exist, a default config file is created at startup.
 - Defaults: output mode `Normal Mode`, output folder `/output`, backup folder `/backup-archive`, language `中文`.
 - A leading `/` or `\` in the output/backup folder means **relative to the program directory**; absolute paths are also accepted.
-- Menu `0 - Reset default config` asks for a second confirmation and then tells you to restart the program.
+- Menu `0 - Reset default config` requires restarting the program to take effect.
 
 ### Notes
 - Back up original files before processing (Replace Mode backs up automatically, but keeping your own copy is still recommended)
