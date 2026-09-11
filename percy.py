@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -174,22 +175,50 @@ def backup_file(src, timestamp):
         shutil.copy2(src, target)
     return target
 
-def getch():
-    """返回用户按下的单个字符（不等待回车）"""
-    if os.name == 'nt':  # Windows
+def _read_key_from_pipe():
+    """标准输入被重定向时，按行读取并取首个字符。
+
+    空行返回 ''，与"直接回车"语义一致，便于脚本化驱动与自动化测试。
+    输入耗尽时抛出 EOFError（与 input() 行为一致），避免菜单空转。
+    """
+    line = sys.stdin.readline()
+    if not line:
+        raise EOFError("standard input exhausted")
+    line = line.rstrip('\r\n')
+    return line[0] if line else ''
+
+def read_key():
+    """读取单个按键，不等待回车；按回车返回 ''。
+
+    Windows 下使用 msvcrt.getwch()，它按字符（而非字节）读取，
+    因此全角 "？" 也能被正确识别，不需要整行输入。
+    """
+    if os.name == 'nt':
         import msvcrt
-        return msvcrt.getch().decode('utf-8', errors='ignore')
-    else:  # Unix/Linux/Mac
-        import tty
-        import termios
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if sys.stdin is not None and not sys.stdin.isatty():
+            return _read_key_from_pipe()
+        ch = msvcrt.getwch()
+        if ch in ('\x00', '\xe0'):   # 方向键/功能键：吞掉后续字节并忽略
+            msvcrt.getwch()
+            return ''
+        if ch in ('\r', '\n'):
+            return ''
         return ch
+
+    import termios
+    import tty
+    if sys.stdin is not None and not sys.stdin.isatty():
+        return _read_key_from_pipe()
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    if ch in ('\r', '\n'):
+        return ''
+    return ch
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -221,6 +250,65 @@ def build_normalize_output_path(source_path, lzr=False):
     else:
         output_name = f"{name}-stable-tail-fixed.png"
     return os.path.join(get_output_dir(), output_name)
+
+# 皮肤中常见的 LN 面身命名：mania-note<数字>L 与 NoteImage*L
+_LN_NAME_PATTERNS = (
+    re.compile(r"^mania-note\d+L$", re.IGNORECASE),
+    re.compile(r"^NoteImage.*L$", re.IGNORECASE),
+)
+
+def is_ln_note_image(path):
+    """文件名是否符合 mania-note[数字]L 或 NoteImage*L。"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return any(pattern.match(stem) for pattern in _LN_NAME_PATTERNS)
+
+def split_ln_targets(pngs):
+    """把 PNG 列表拆成 (匹配 LN 面身命名的, 其余)。"""
+    matched = [p for p in pngs if is_ln_note_image(p)]
+    return matched, [p for p in pngs if not is_ln_note_image(p)]
+
+def choose_dir_targets(pngs):
+    """目录模式下列出匹配的 LN 面身文件，并让用户确认修改范围。
+
+    返回 (targets, proceed)；proceed 为 False 表示返回上一级路径输入。
+    """
+    matched, _others = split_ln_targets(pngs)
+    print(f"\n{Color.OKCYAN}{t('【目录扫描结果】', '[Directory scan]')}{Color.ENDC}")
+    if matched:
+        print(t(f"匹配到 {len(matched)} 个 LN 面身文件（mania-note[数字]L / NoteImage*L）:",
+                f"Matched {len(matched)} LN note-body file(s) (mania-note<digit>L / NoteImage*L):"))
+        for p in matched:
+            print(f"  {Color.BOLD}- {os.path.basename(p)}{Color.ENDC}")
+    else:
+        print(f"{Color.WARNING}"
+              + t("未匹配到 mania-note[数字]L 或 NoteImage*L 命名的文件。",
+                  "No files named mania-note<digit>L or NoteImage*L were found.")
+              + f"{Color.ENDC}")
+    print(f"{Color.HEADER}{t('该目录下 PNG 总数: ', 'Total PNG files: ')}"
+          f"{Color.BOLD}{len(pngs)}{Color.ENDC}")
+
+    all_key = '2' if matched else '1'
+    print(f"\n{Color.OKCYAN}"
+          + t("请选择修改范围（直接回车返回上级）:", "Choose the scope (Enter to go back):")
+          + f"{Color.ENDC}")
+    if matched:
+        print(t(f"  1 - 仅修改上面列出的 {len(matched)} 个匹配文件",
+                f"  1 - Only the {len(matched)} matched file(s) listed above"))
+    print(t(f"  {all_key} - 修改该目录下全部 {len(pngs)} 个图片文件",
+            f"  {all_key} - All {len(pngs)} image file(s) in this directory"))
+    print("> ", end='', flush=True)
+
+    key = read_key().strip()
+    print(key)
+    if key == '':
+        print(f"{Color.WARNING}{t('已返回上级。', 'Going back.')}{Color.ENDC}")
+        return [], False
+    if matched and key == '1':
+        return matched, True
+    if key == all_key:
+        return pngs, True
+    print(f"{Color.FAIL}{t('输入无效，已返回上级。', 'Invalid input; going back.')}{Color.ENDC}")
+    return [], False
 
 def collect_png_targets(path):
     if os.path.isfile(path):
@@ -298,7 +386,8 @@ def handle_undersized(undersized):
             "  1 - Adjust image(s) to reach 1000px (originals are backed up first, results replace them)"))
     print(t("  2 - 返回", "  2 - Go back"))
     print("> ", end='', flush=True)
-    ans = input().strip()
+    ans = read_key().strip()
+    print(ans)
     if ans != '1':
         return False
 
@@ -328,9 +417,18 @@ def handle_undersized(undersized):
     return True
 
 def confirm_action(prompt):
+    """单键确认：按 y 确认，其他任意键（含回车）取消。"""
     print(f"{Color.WARNING}{prompt}{Color.ENDC}")
-    ans = input("输入 y 确认，其他任意键取消: ").strip().lower()
-    return ans == 'y'
+    print(t("按 y 确认，其他任意键取消: ", "Press y to confirm, any other key to cancel: "),
+          end='', flush=True)
+    key = read_key()
+    print(key)
+    return key.strip().lower() == 'y'
+
+def pause():
+    """按任意键继续（单键触发，无需回车）。"""
+    print(t("按任意键继续...", "Press any key to continue..."), end='', flush=True)
+    read_key()
 
 def emit_output(src, mode, timestamp, build_path, produce):
     """按输出模式写出结果，返回结果文件路径。
@@ -692,16 +790,17 @@ def print_help():
     The -replaced-file / -height-adjustment markers in messages only describe the
     reason for the backup; the real folder name is [timestamp].
 {Color.OKCYAN}[Menu Description]{Color.ENDC}
-  - ? - Help: Show this help page (both ? and the full-width ？ work).
-  - 0 - Reset Default Config: after a second confirmation, restore the output mode,
-    output folder, backup folder and language to defaults. A restart is required.
+  The menu is single-key: press one key and it runs immediately, no Enter needed.
+  - ? - Help: Show this help page (both the half-width ? and the full-width ？ work).
+  - 0 - Reset Default Config: restore the output mode, output folder, backup folder and
+    language to defaults. A restart is required.
   - 1 - Switch Mode: Toggle between Stable and Lazer.
     Note: In Lazer mode, the minimum d is 75.
-  - 2 - View Current d: Available only in single-image mode.
-    Not available in directory batch mode.
+  - 2 - View Current d: In single-image mode it shows that image's d; in directory mode
+    it lists the d of every selected image, one per line.
   - 3 - Modify d:
     Single-image mode outputs one image.
-    Directory mode applies the same d to all PNG files in that directory.
+    Directory mode applies the same d to all selected files in that directory.
     In Normal Mode you may choose whether to add a suffix to the output filename;
     in Replace Mode the filename never changes, so no suffix is asked.
     Replace Mode shows a bold red warning that originals will be overwritten.
@@ -718,12 +817,18 @@ def print_help():
   - 6 - Adjust Output Mode: Switch between Normal Mode and Replace Mode. The current
     output mode is always shown above the menu.
   - 7 - Adjust Output/Backup Folder: Choose whether to adjust the output folder or the
-    backup folder, then enter a new path.
+    backup folder, then enter a new path. Leaving the input empty returns to the menu.
   - 8 - Switch Image: Select a new PNG or directory path.
   - 9 - Check Updates: Query latest release info from GitHub.
-  - 10 - Quit: Save the config and exit the program.
-  - 11 - Language/语言: Switch the interface language (中文 / English). The choice is
-    saved into the config file; percy_en.exe starts in English by default.
+  - L - Language/语言: Switch the interface language (中文 / English). Leaving the input
+    empty returns to the menu; the choice is saved to the config file.
+  - Q - Quit: Save the config and exit the program.
+{Color.OKCYAN}[Selecting a Directory]{Color.ENDC}
+  When a directory is chosen, files named like mania-note<digit>L or NoteImage*L are
+  listed first, then you pick the scope:
+  - 1 - Only the matched files listed above
+  - 2 - All image files in that directory
+  Pressing Enter returns to the path input.
 {Color.OKCYAN}[Images Shorter Than 1000px]{Color.ENDC}
   When an image shorter than 1000px is found, the tool lists those files and asks:
   - 1 - Adjust image(s) to reach 1000px: the original is copied into the [timestamp]
@@ -777,13 +882,14 @@ def print_help():
               提示中的 -replaced-file / -height-adjustment 是备份原因标记，
               实际文件夹名为 [备份时间戳]。
 {Color.OKCYAN}【菜单说明】{Color.ENDC}
+  菜单为单键触发：按一个键立即执行，无需回车。
   • ? - 帮助 : 显示本说明页（半角 ? 与全角 ？ 均可触发）。
-  • 0 - 重置默认配置 : 二次确认后把输出模式、输出文件夹、备份文件夹、语言恢复为默认值，
+  • 0 - 重置默认配置 : 把输出模式、输出文件夹、备份文件夹、语言恢复为默认值，
                        需要重启程序才会生效。
   • 1 - 切换模式 : 在 Stable 和 Lazer 之间切换。注意 Lazer 模式下 d 最小为 75。
-  • 2 - 查看当前投机取巧程度 : 仅单图模式可用；目录批处理模式下不可用。
+  • 2 - 查看当前投机取巧程度 : 单图模式显示该图的 d；目录模式会逐张列出所有已选图片的 d。
   • 3 - 修改投机取巧程度 :
-        单图模式会输出 1 张结果图；目录模式会对该目录下所有 PNG 进行同一 d 的批处理。
+        单图模式会输出 1 张结果图；目录模式会对已选文件进行同一 d 的批处理。
         常规模式下输入 d 值后可选择是否为输出文件名添加后缀，随后会再确认一次；
         替换模式下文件名不变，因此不再询问后缀。
         替换模式在确认前会用醒目红色警告提示将覆盖原文件。
@@ -795,11 +901,19 @@ def print_help():
       Lazer 模式显示为“图片拉伸修复”，会执行 Lazer 标准化（固定到 32800px）。
       Stable 模式显示为“修复面尾白线”，会执行 Stable 标准化（超过 32767px 时裁切并清空末行）。
   • 6 - 调整输出模式 : 在 常规模式 与 替换模式 之间切换；菜单上方始终显示当前输出模式。
-  • 7 - 调整输出/备份文件夹 : 先选择要调整“输出文件夹”还是“备份文件夹”，再输入新的文件夹路径。
+  • 7 - 调整输出/备份文件夹 : 先选择“输出文件夹”还是“备份文件夹”，再输入新路径；
+       留空（直接回车）即可返回上级菜单。
   • 8 - 更换图片 : 重新选择单个 PNG 或文件夹路径。
   • 9 - 检查更新 : 从 GitHub 获取最新发布版本信息。
-  • 10 - 退出 : 保存配置并关闭程序。
-  • 11 - 语言/Language : 切换界面语言（中文 / English），设置会保存到配置文件。
+  • L - 语言/Language : 切换界面语言（中文 / English）；留空（直接回车）即可返回上级菜单，
+        设置会保存到配置文件。
+  • Q - 退出 : 保存配置并关闭程序。
+{Color.OKCYAN}【选择文件夹时】{Color.ENDC}
+  选择文件夹后，程序会先列出命名匹配 mania-note[数字]L 或 NoteImage*L 的文件，
+  再让你选择修改范围：
+  • 1 - 仅修改上面列出的匹配文件
+  • 2 - 修改该目录下的全部图片文件
+  直接回车则返回路径输入。
 {Color.OKCYAN}【高度小于 1000px 的图片】{Color.ENDC}
   处理到高度小于 1000px 的图片时，程序会列出这些文件名并让你选择：
   • 1 - 调整图片使其达到 1000px : 先把原文件复制到 [备份时间戳] 文件夹，再把图片纵向
@@ -827,7 +941,8 @@ def print_help():
 {Color.BOLD}{Color.OKGREEN}=============================={Color.ENDC}
 """
     print(help_text)
-    input(f"{Color.WARNING}{t('按回车键返回菜单...', 'Press Enter to return to menu...')}{Color.ENDC}")
+    print(f"{Color.WARNING}{t('按任意键返回菜单...', 'Press any key to return to the menu...')}{Color.ENDC}", end='', flush=True)
+    read_key()
 
 
 
@@ -864,8 +979,8 @@ def main(default_language=DEFAULT_LANGUAGE):
             try:
                 targets, source_type = collect_png_targets(path)
                 if source_type == "dir":
-                    if not confirm_action(t(f"警告: 检测到文件夹，将批处理该目录下 {len(targets)} 个 .png 文件。是否继续？",
-                                            f"Warning: directory detected. {len(targets)} .png files will be batch processed. Continue?")):
+                    targets, proceed = choose_dir_targets(targets)
+                    if not proceed:
                         clear_screen()
                         continue
                 undersized = find_undersized(targets)
@@ -882,19 +997,19 @@ def main(default_language=DEFAULT_LANGUAGE):
             
         clear_screen()
         if current_source_type == "dir":
-            print(f"\n{Color.OKGREEN}{t('当前目录: ', 'Current directory: ')}{Color.BOLD}{current_image_path}{Color.ENDC}")
-            print(f"{Color.OKGREEN}{t('待处理图片数量: ', 'PNG files to process: ')}{Color.BOLD}{len(current_targets)}{Color.ENDC}")
+            print(f"\n{Color.OKCYAN}{t('当前目录: ', 'Current directory: ')}{Color.BOLD}{current_image_path}{Color.ENDC}")
+            print(f"{Color.WARNING}{t('待处理图片数量: ', 'PNG files to process: ')}{Color.BOLD}{len(current_targets)}{Color.ENDC}")
         else:
-            print(f"\n{Color.OKGREEN}{t('当前图片: ', 'Current image: ')}{Color.BOLD}{current_image_path}{Color.ENDC}")
+            print(f"\n{Color.HEADER}{t('当前图片: ', 'Current image: ')}{Color.BOLD}{current_image_path}{Color.ENDC}")
         mode_label = "Stable" if current_mode == "stable" else "Lazer"
         current_output_mode = config().get("output_mode", OUTPUT_MODE_NORMAL)
         out_mode_label = output_mode_label(current_output_mode)
-        print(f"{Color.OKGREEN}{t('当前模式: ', 'Current mode: ')}{Color.BOLD}{mode_label}{Color.ENDC}")
+        print(f"{Color.OKBLUE}{t('当前模式: ', 'Current mode: ')}{Color.BOLD}{mode_label}{Color.ENDC}")
         if current_output_mode == OUTPUT_MODE_REPLACE:
             print(f"{Color.BOLD}{Color.FAIL}{t('当前输出模式: ', 'Current output mode: ')}{out_mode_label}{Color.ENDC}")
         else:
             print(f"{Color.OKGREEN}{t('当前输出模式: ', 'Current output mode: ')}{Color.BOLD}{out_mode_label}{Color.ENDC}")
-        print(f"{Color.OKCYAN}{t('请选择操作:', 'Select an action:')}{Color.ENDC}")
+        print(f"{Color.OKCYAN}{t('请选择操作（按单键即可，无需回车）:', 'Select an action (single key, no Enter needed):')}{Color.ENDC}")
         print("  {0} - {1}".format(Color.WARNING + "?" + Color.ENDC, t("帮助", "Help")))
         print("  {0} - {1}".format(Color.WARNING + "0" + Color.ENDC, t("重置默认配置", "Reset default config")))
         print("  {0} - {1}".format(Color.OKBLUE + "1" + Color.ENDC, t("切换模式", "Switch mode")))
@@ -910,11 +1025,12 @@ def main(default_language=DEFAULT_LANGUAGE):
         print("  {0} - {1}".format(Color.OKBLUE + "7" + Color.ENDC, t("调整输出/备份文件夹", "Adjust output/backup folder")))
         print("  {0} - {1}".format(Color.OKBLUE + "8" + Color.ENDC, t("更换图片", "Switch image")))
         print("  {0} - {1}".format(Color.OKBLUE + "9" + Color.ENDC, t("检查更新", "Check updates")))
-        print("  {0} - {1}".format(Color.OKBLUE + "10" + Color.ENDC, t("退出", "Quit")))
-        print("  {0} - {1}".format(Color.OKBLUE + "11" + Color.ENDC, t("语言 / Language", "Language / 语言")))
+        print("  {0} - {1}".format(Color.OKBLUE + "L" + Color.ENDC, t("语言 / Language", "Language / 语言")))
+        print("  {0} - {1}".format(Color.OKBLUE + "Q" + Color.ENDC, t("退出", "Quit")))
         print("> ", end='', flush=True)
 
-        choice = input().strip()
+        choice = read_key().strip()
+        print(choice)
 
         if choice in ('?', '？'):
             clear_screen()
@@ -932,28 +1048,40 @@ def main(default_language=DEFAULT_LANGUAGE):
             reset_default_config(default_language)
             print(f"{Color.OKGREEN}{t('配置已重置为默认值。', 'Config has been reset to defaults.')}{Color.ENDC}")
             print(f"{Color.WARNING}{t('请重启程序以使新配置生效。', 'Please restart the program for it to take effect.')}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '1':
             current_mode = "lazer" if current_mode == "stable" else "stable"
             switched_label = "Stable" if current_mode == "stable" else "Lazer"
             print(f"\n{Color.OKGREEN}{t('已切换到 ', 'Switched to ')}{switched_label}{t(' 模式。', ' mode.')}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '2':
             if current_source_type == "dir":
-                print(f"\n{Color.WARNING}{t('当前为目录批处理模式，无法显示单个 d。请切换为单图或直接执行处理。', 'Current target is a directory batch, so a single d cannot be shown. Switch to a single image or process directly.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
-                clear_screen()
-                continue
-            try:
-                d = get_current_d(current_image_path)
-                if current_mode == "lazer":
-                    d += 75
-                print(f"\n{Color.OKGREEN}{t('当前投机取巧程度 d = ', 'Current d = ')}{d}{t('px（', 'px (')}{mode_label}{t('）', ')')}{Color.ENDC}")
-            except Exception as e:
-                print(f"\n{Color.FAIL}{t('获取 d 失败: ', 'Failed to read current d: ')}{e}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+                print(f"\n{Color.OKCYAN}"
+                      + t(f"已选中 {len(current_targets)} 张图片，逐张读取 d 值:",
+                          f"{len(current_targets)} image(s) selected; reading d for each:")
+                      + f"{Color.ENDC}")
+                for tgt in current_targets:
+                    try:
+                        d = get_current_d(tgt)
+                        if current_mode == "lazer":
+                            d += 75
+                        print(f"  {Color.BOLD}{os.path.basename(tgt)}{Color.ENDC}"
+                              f"{t(' 的投机取巧程度 d = ', ' d = ')}"
+                              f"{Color.OKGREEN}{d}px{Color.ENDC}")
+                    except Exception as e:
+                        print(f"  {Color.BOLD}{os.path.basename(tgt)}{Color.ENDC}"
+                              f"{t(' 读取失败: ', ' failed: ')}{Color.FAIL}{e}{Color.ENDC}")
+            else:
+                try:
+                    d = get_current_d(current_image_path)
+                    if current_mode == "lazer":
+                        d += 75
+                    print(f"\n{Color.OKGREEN}{t('当前投机取巧程度 d = ', 'Current d = ')}{d}{t('px（', 'px (')}{mode_label}{t('）', ')')}{Color.ENDC}")
+                except Exception as e:
+                    print(f"\n{Color.FAIL}{t('获取 d 失败: ', 'Failed to read current d: ')}{e}{Color.ENDC}")
+            pause()
             clear_screen()
         elif choice == '3':
             if current_mode == "lazer":
@@ -966,12 +1094,12 @@ def main(default_language=DEFAULT_LANGUAGE):
                 new_d = int(new_d_str)
             except ValueError:
                 print(f"{Color.FAIL}{t('输入无效，请输入整数。', 'Invalid input. Please enter an integer.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                pause()
                 clear_screen()
                 continue
             if current_mode == "lazer" and new_d < 75:
                 print(f"{Color.FAIL}{t('Lazer 模式下 d 的最小值为 75。', 'Minimum d in Lazer mode is 75.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                pause()
                 clear_screen()
                 continue
 
@@ -984,14 +1112,15 @@ def main(default_language=DEFAULT_LANGUAGE):
                 print(t("  1 - 添加后缀（原文件名-新d值px-模式）", "  1 - Add suffix (original-name-dpx-mode)"))
                 print(t("  2 - 不添加后缀（仅原文件名）", "  2 - No suffix (original name only)"))
                 print("> ", end='', flush=True)
-                suffix_choice = input().strip()
+                suffix_choice = read_key().strip()
+                print(suffix_choice)
                 if suffix_choice == '1':
                     add_suffix = True
                 elif suffix_choice == '2':
                     add_suffix = False
                 else:
                     print(f"{Color.FAIL}{t('输入无效，请输入 1 或 2。', 'Invalid input. Please enter 1 or 2.')}{Color.ENDC}")
-                    input(t("按回车键继续...", "Press Enter to continue..."))
+                    pause()
                     clear_screen()
                     continue
 
@@ -1046,12 +1175,12 @@ def main(default_language=DEFAULT_LANGUAGE):
                     print(f"{Color.OKGREEN}{t('成功输出目录: ', 'Successful outputs are in: ')}{get_output_dir()}{Color.ENDC}")
             except Exception as e:
                 print(f"{Color.FAIL}{t('处理失败: ', 'Processing failed: ')}{e}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '4':
             if current_source_type != "file":
                 print(f"{Color.FAIL}{t('该功能仅支持单个图片。请先选择单图。', 'This feature supports only a single image target. Please switch image first.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                pause()
                 clear_screen()
                 continue
 
@@ -1077,7 +1206,7 @@ def main(default_language=DEFAULT_LANGUAGE):
                     raise LNImageError(t("Lazer 模式下 d 的最小值为 75。", "Minimum d in Lazer mode is 75."))
             except Exception as e:
                 print(f"{Color.FAIL}{t('输入无效: ', 'Invalid input: ')}{e}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                pause()
                 clear_screen()
                 continue
 
@@ -1129,7 +1258,7 @@ def main(default_language=DEFAULT_LANGUAGE):
                 else:
                     print(f"{Color.OKGREEN}{t('已成功输出部分结果到: ', 'Successful outputs are in: ')}{get_output_dir()}{Color.ENDC}")
 
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '5':
             if current_mode == "lazer":
@@ -1184,7 +1313,7 @@ def main(default_language=DEFAULT_LANGUAGE):
                     print(f"{Color.OKGREEN}{t('成功输出目录: ', 'Successful outputs are in: ')}{get_output_dir()}{Color.ENDC}")
             except Exception as e:
                 print(f"{Color.FAIL}{fix_label}{t('失败: ', ' failed: ')}{e}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '6':
             active_mode = config().get("output_mode", OUTPUT_MODE_NORMAL)
@@ -1197,14 +1326,15 @@ def main(default_language=DEFAULT_LANGUAGE):
                     "                    subfolder first, then results replace the original files."))
             print(f"\n{t('当前输出模式: ', 'Current output mode: ')}{Color.BOLD}{output_mode_label(active_mode)}{Color.ENDC}")
             print(t("请选择 (1/2): ", "Select (1/2): "), end='', flush=True)
-            ans = input().strip()
+            ans = read_key().strip()
+            print(ans)
             if ans == '1':
                 new_mode = OUTPUT_MODE_NORMAL
             elif ans == '2':
                 new_mode = OUTPUT_MODE_REPLACE
             else:
                 print(f"{Color.FAIL}{t('输入无效，请输入 1 或 2。', 'Invalid input. Please enter 1 or 2.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                pause()
                 clear_screen()
                 continue
             cfg_now = config()
@@ -1215,15 +1345,20 @@ def main(default_language=DEFAULT_LANGUAGE):
                 print(f"{Color.FAIL}{t('注意: 替换模式会覆盖原文件，原文件将备份到 ', 'Note: Replace Mode overwrites originals; they are backed up to ')}{get_backup_root()}{Color.ENDC}")
             else:
                 print(f"{Color.OKGREEN}{t('处理结果将输出到: ', 'Results will be written to: ')}{get_output_dir()}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '7':
             cfg_now = config()
             print(f"\n{Color.OKBLUE}{t('请选择要调整的文件夹:', 'Choose which folder to adjust:')}{Color.ENDC}")
             print(f"  1 - {t('输出文件夹', 'Output folder')} ({t('当前', 'current')}: {cfg_now.get('output_dir')} -> {resolve_dir(cfg_now.get('output_dir'))})")
             print(f"  2 - {t('备份文件夹', 'Backup folder')} ({t('当前', 'current')}: {cfg_now.get('backup_dir')} -> {resolve_dir(cfg_now.get('backup_dir'))})")
+            print(f"{Color.WARNING}{t('留空（直接回车）即可返回上级菜单', 'Leave empty (press Enter) to return to the menu')}{Color.ENDC}")
             print("> ", end='', flush=True)
-            sel = input().strip()
+            sel = read_key().strip()
+            print(sel)
+            if sel == '':
+                clear_screen()
+                continue
             if sel == '1':
                 folder_key = 'output_dir'
                 folder_label = t('输出文件夹', 'Output folder')
@@ -1231,22 +1366,24 @@ def main(default_language=DEFAULT_LANGUAGE):
                 folder_key = 'backup_dir'
                 folder_label = t('备份文件夹', 'Backup folder')
             else:
-                print(f"{Color.FAIL}{t('输入无效，请输入 1 或 2。', 'Invalid input. Please enter 1 or 2.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                print(f"{Color.FAIL}{t('输入无效，已返回上级菜单。', 'Invalid input; returning to the menu.')}{Color.ENDC}")
+                pause()
                 clear_screen()
                 continue
-            print(f"{Color.OKBLUE}{t('请输入新的', 'Enter the new ')}{folder_label}{t('路径（以 / 开头表示相对程序运行目录，留空取消）:', ' path (a leading / means relative to the program directory, empty cancels):')}{Color.ENDC}", end='', flush=True)
+            print(f"{Color.OKBLUE}{t('请输入新的', 'Enter the new ')}{folder_label}{t('路径（以 / 开头表示相对程序运行目录）:', ' path (a leading / means relative to the program directory):')}{Color.ENDC}")
+            print(f"{Color.WARNING}{t('留空（直接回车）即可返回上级菜单', 'Leave empty (press Enter) to return to the menu')}{Color.ENDC}")
+            print("> ", end='', flush=True)
             new_folder = normalize_input_path(input().strip())
             if not new_folder:
-                print(f"{Color.WARNING}{t('已取消，未做修改。', 'Cancelled. Nothing was changed.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                print(f"{Color.WARNING}{t('已留空，返回上级菜单。', 'Empty input; returning to the menu.')}{Color.ENDC}")
+                pause()
                 clear_screen()
                 continue
             cfg_now[folder_key] = new_folder
             save_config(cfg_now)
             print(f"{Color.OKGREEN}{folder_label}{t('已更新为: ', ' updated to: ')}{new_folder}{Color.ENDC}")
             print(f"{Color.OKGREEN}{t('实际路径: ', 'Resolved path: ')}{resolve_dir(new_folder)}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
         elif choice == '8':
             current_image_path = None
@@ -1264,27 +1401,28 @@ def main(default_language=DEFAULT_LANGUAGE):
                     print(f"{t('请访问发布页面下载最新版本： ', 'Please visit releases page: ')}https://github.com/{_OWNER}/{_REPO}/releases/latest")
                 else:
                     print(f"{Color.OKGREEN}{t('已是最新版本：', 'You are already on the latest version: ')}{VERSION}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
-        elif choice == '10':
-            save_config(config())
-            print(f"{Color.OKGREEN}{t('配置已保存，程序退出。', 'Config saved. Program exited.')}{Color.ENDC}")
-            break
-        elif choice == '11':
+        elif choice.lower() == 'l':
             current_lang = config().get("language", DEFAULT_LANGUAGE)
             print(f"\n{Color.OKCYAN}{t('【语言 / Language】', '[Language / 语言]')}{Color.ENDC}")
             print("  1 - 中文")
             print("  2 - English")
             print(f"{t('当前语言: ', 'Current language: ')}{Color.BOLD}{language_label(current_lang)}{Color.ENDC}")
+            print(f"{Color.WARNING}{t('留空（直接回车）即可返回上级菜单', 'Leave empty (press Enter) to return to the menu')}{Color.ENDC}")
             print("> ", end='', flush=True)
-            sel = input().strip()
+            sel = read_key().strip()
+            print(sel)
+            if sel == '':
+                clear_screen()
+                continue
             if sel == '1':
                 new_lang = "zh"
             elif sel == '2':
                 new_lang = "en"
             else:
-                print(f"{Color.FAIL}{t('输入无效，请输入 1 或 2。', 'Invalid input. Please enter 1 or 2.')}{Color.ENDC}")
-                input(t("按回车键继续...", "Press Enter to continue..."))
+                print(f"{Color.FAIL}{t('输入无效，已返回上级菜单。', 'Invalid input; returning to the menu.')}{Color.ENDC}")
+                pause()
                 clear_screen()
                 continue
             cfg_now = config()
@@ -1293,11 +1431,18 @@ def main(default_language=DEFAULT_LANGUAGE):
             LANG = new_lang
             print(f"{Color.OKGREEN}{t('语言已切换为: ', 'Language switched to: ')}{language_label(new_lang)}{Color.ENDC}")
             print(f"{Color.OKGREEN}{t('界面已即时生效，并已保存到配置文件。', 'The interface takes effect immediately and the choice was saved to the config file.')}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
+        elif choice.lower() == 'q':
+            save_config(config())
+            print(f"{Color.OKGREEN}{t('配置已保存，程序退出。', 'Config saved. Program exited.')}{Color.ENDC}")
+            break
         else:
+            if choice == '':
+                clear_screen()
+                continue
             print(f"{Color.WARNING}{t('无效选项，请重试。', 'Invalid option. Please try again.')}{Color.ENDC}")
-            input(t("按回车键继续...", "Press Enter to continue..."))
+            pause()
             clear_screen()
 
 if __name__ == "__main__":

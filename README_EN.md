@@ -34,14 +34,15 @@ python percy_en.py
 
 ### Menu and Keys
 
-The current output mode is always shown above the menu. The menu uses **whole-line input**: type and press Enter.
+The current output mode is always shown above the menu. The menu is **single-key**:
+press one key and it runs immediately, no Enter needed.
 
 | Key | Function |
 |---|---|
 | `?` | Help (both the half-width `?` and the full-width `？` work) |
-| `0` | Reset default config (second confirmation; restart required) |
+| `0` | Reset default config (restart required) |
 | `1` | Switch mode (Stable / Lazer) |
-| `2` | View current d (single-image mode only) |
+| `2` | View current d (single image shows its own d; directory mode lists the d of every selected image) |
 | `3` | Modify d |
 | `4` | Single-image batch generation (single-image mode only) |
 | `5` | Mode fix tool (Stable: "Fix Tail White Line"; Lazer: "Stretch Repair") |
@@ -49,8 +50,23 @@ The current output mode is always shown above the menu. The menu uses **whole-li
 | `7` | Adjust output/backup folder |
 | `8` | Switch image |
 | `9` | Check updates |
-| `10` | Quit (saves config) |
-| `11` | Language / 语言 (switch the interface language: 中文 / English) |
+| `L` | Language / 语言 (switch the interface language: 中文 / English) |
+| `Q` | Quit (saves config) |
+
+Places that need typed text (image/folder paths, the d value, batch start/end/step) still use
+whole-line input confirmed with Enter. In menus `7` and `L`, **leaving the input empty
+(pressing Enter) returns to the parent menu**.
+
+### Selecting a Directory
+
+After you choose a directory, the tool first lists the files named like `mania-note<digit>L`
+or `NoteImage*L` and reports the total PNG count, then asks you to confirm the scope:
+
+- `1` - Only the matched files listed above
+- `2` - All image files in that directory
+- Enter - return to the path input
+
+When several files are selected, menu `2` lists the cut-off amount of every image, one per line.
 
 ### Output Modes
 
