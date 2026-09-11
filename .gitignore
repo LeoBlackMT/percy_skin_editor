@@ -214,3 +214,6 @@ backup-archive/
 
 # Local self-test harness
 _t/
+
+# Scratch/temp area used for packaging and the test suites
+.tmp/
