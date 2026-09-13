@@ -1418,7 +1418,13 @@ def main():
             fix_timestamp = make_timestamp() if active_mode == OUTPUT_MODE_REPLACE else None
 
             if active_mode == OUTPUT_MODE_REPLACE:
-                print(f"\n{Color.BOLD}{Color.FAIL}{t('！！！ 警告: 当前为【替换模式】，“', '!!! WARNING: Replace Mode is active - "')}{fix_label}{t('”结果将覆盖所选原文件 ！！！', '" will overwrite the selected original files !!!')}{Color.ENDC}")
+                # 英文串里带 ASCII 引号，直接嵌在双引号 f-string 里会让 Python <= 3.11
+                # 在引号处提前结束该字面量（PEP 701 / 3.12 起才允许），因此先取出再拼接。
+                warn_head = t('！！！ 警告: 当前为【替换模式】，“',
+                              '!!! WARNING: Replace Mode is active - "')
+                warn_tail = t('”结果将覆盖所选原文件 ！！！',
+                              '" will overwrite the selected original files !!!')
+                print(f"\n{Color.BOLD}{Color.FAIL}{warn_head}{fix_label}{warn_tail}{Color.ENDC}")
                 print(f"{Color.FAIL}{t('原文件会先备份到: ', 'Originals are backed up to: ')}{os.path.join(get_backup_root(), fix_timestamp)}{Color.ENDC}")
                 if not confirm_action(t(f"确认对 {len(current_targets)} 张原文件执行“{fix_label}”并替换？",
                                        f"Run '{fix_label}' on {len(current_targets)} original file(s) and replace them?")):
@@ -1598,6 +1604,14 @@ def main():
             clear_screen()
 
 if __name__ == "__main__":
+    # 输出被重定向（管道 / 日志）时，某些环境编码不了中文（例如英文 Windows 的
+    # cp1252），第一条 print 就会 UnicodeEncodeError 崩溃。这里只放宽错误处理，
+    # 不改变能正常编码时的行为。
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors="replace")
+        except Exception:
+            pass
     try:
         sys.exit(main())
     except KeyboardInterrupt:

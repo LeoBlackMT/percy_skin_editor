@@ -2,49 +2,55 @@ name: Code Checks (static/type/security)
 
 on:
   workflow_dispatch:
-  push: {}
+  push:
+    branches:
+      - main
+      - master
   pull_request:
-    types: [closed]
+    branches:
+      - main
+      - master
 
 jobs:
   checks:
-    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true) }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show workspace (debug)
-        run: |
-          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-          pwd
-          ls -la
-          ls -la percy_skin_editor || true
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies & tools
+      - name: Install dependencies
         run: |
-          cd percy_skin_editor || exit 0
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install ruff mypy pip-audit
+          pip install -r requirements.txt
 
-      - name: Static analysis (ruff)
-        run: |
-          cd percy_skin_editor || exit 0
-          ruff check .
+      # 以前每一步都写着 `cd percy_skin_editor || exit 0`，而仓库根就是项目根：
+      # cd 失败后整步以 0 退出，ruff / mypy / pip-audit 从未真正运行过。
+      # 下面两步是确定性的阻塞关卡，任何一步失败都会让检查变红。
+      - name: Compile check
+        run: python -m py_compile percy.py
 
-      - name: Type checking (mypy)
-        run: |
-          cd percy_skin_editor || exit 0
-          mypy .
+      - name: Import check
+        run: python -c "import percy; print('percy v' + percy.VERSION + ' imported OK')"
 
-      - name: Dependency security scan (pip-audit)
-        run: |
-          cd percy_skin_editor || exit 0
-          pip-audit --progress-spinner=off
+      - name: Install analysis tools
+        run: pip install ruff mypy pip-audit
+
+      # 本仓库目前没有 ruff / mypy 基线，这三步先只展示结果、不阻断合并；
+      # 等基线清理干净后再去掉 continue-on-error。
+      - name: Lint (ruff)
+        continue-on-error: true
+        run: ruff check --output-format=concise .
+
+      - name: Types (mypy)
+        continue-on-error: true
+        run: mypy percy.py
+
+      - name: Dependency audit (pip-audit)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --progress-spinner=off

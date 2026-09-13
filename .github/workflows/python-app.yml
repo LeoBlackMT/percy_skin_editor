@@ -26,6 +26,8 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
+          # 发行 exe 使用的解释器，同时也是源码的语法关卡：只有在 3.12+ 才合法的
+          # 写法（PEP 701 f-string）会在这里直接失败。
           python-version: "3.11"
 
       - name: Install dependencies
@@ -34,9 +36,25 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      # PyInstaller 先刷几百行 INFO，语法错误容易被淹没；先单独编译一次，
+      # 出错时能立刻看到文件与行号。
+      - name: Check syntax
+        run: python -m py_compile percy.py
+
       - name: Build percy
         run: |
           pyinstaller --clean --noconfirm --onefile --name percy percy.py
+
+      # 打包产物至少要能启动并正常退出：喂一个 q 走完启动流程。
+      # 非 tty 时 read_key() 会走管道分支，不会卡住。
+      - name: Smoke test the exe
+        shell: pwsh
+        run: |
+          "q" | .\dist\percy.exe
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "percy.exe exited with $LASTEXITCODE"
+            exit 1
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
