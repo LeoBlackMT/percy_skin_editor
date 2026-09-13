@@ -206,3 +206,20 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 /percy-skin-editor-exe
+
+# Percy Skin Editor runtime artifacts
+percy_config.json
+output/
+backup-archive/
+
+# Local self-test harness
+_t/
+
+# Scratch/temp area used for packaging and the test suites
+.tmp/
+
+# PyInstaller onefile extraction leftovers (created when an exe runs)
+_MEI*/
+
+# Packaged executables: distributed via GitHub Releases, not via version control
+releases/

@@ -8,9 +8,12 @@ on:
       - master
     paths:
       - percy.py
-      - percy_en.py
       - requirements.txt
-      - .github/workflows/build-exe.yml
+      - .github/workflows/python-app.yml
+  pull_request:
+    branches:
+      - main
+      - master
 
 jobs:
   build:
@@ -31,13 +34,9 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build percy (Chinese)
+      - name: Build percy
         run: |
           pyinstaller --clean --noconfirm --onefile --name percy percy.py
-
-      - name: Build percy_en (English)
-        run: |
-          pyinstaller --clean --noconfirm --onefile --name percy_en percy_en.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -45,5 +44,4 @@ jobs:
           name: percy-skin-editor-exe
           path: |
             dist/percy.exe
-            dist/percy_en.exe
           if-no-files-found: error

@@ -1,14 +1,11 @@
 # Percy Skin Editor
 
-English users: scroll down to the English section.
-Note: I use AI translation for the English version, so there may be some inaccuracies. Please refer to the Chinese version for the most accurate information.
-
----
+[中文](README.md) | [English](README_EN.md)
 
 ### 介绍
 Percy Skin Editor 是一个用于 osu!mania 的投皮编辑工具。
 
-投皮（percy skin）是将 LN 面身拉伸到很长后，再通过顶部截断获得短尾视觉效果的做法。
+投皮（percy skin）是将 LN 面身拉伸到很长后，再通过顶部截断获得短尾视觉效果的做法，使玩家更好读懂LN谱面。
 本工具用于在stb和lzr下调整“投机取巧程度”，即 cut off by x pixels（从图片顶部到第一个非背景像素的距离）。
 
 ### 特性
@@ -17,70 +14,104 @@ Percy Skin Editor 是一个用于 osu!mania 的投皮编辑工具。
 - 自动检测 LN 结构，适应不同皮肤设计
 - 支持修复lazer中过度拉伸导致的视觉问题
 - 支持修复stable中面尾白线问题
+- 支持 常规 / 替换 两种输出模式，替换前自动备份原文件，方便直接修改既有皮肤
+- 选择文件夹时可只针对匹配的 LN 面身文件，或处理全部图片
+- 配置持久化（输出模式、输出文件夹、备份文件夹、界面语言）
 
 ### 环境要求
-- Python 3.8+
-- Pillow
-- requests
-- packaging
+- 64 位 Windows 系统（发行版 exe 为 64 位构建）
+- exe 已内置完整运行环境，无需安装 Python 或任何第三方依赖
+- 除「检查更新」需要访问 GitHub 外，其余功能均可离线使用
 
-### 安装
+### 使用方式
+
+**方式一：下载 exe（推荐）**
+
+从 Releases 页面下载 `percy.exe`，双击即可运行，无需安装 Python 或任何依赖。
+
+**方式二：从源码运行**
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 使用方法
-
-```bash
 python percy.py
 ```
 
+需要 Python 3.8+，第三方依赖见 `requirements.txt`。
+
+### 菜单与按键
+
+菜单上方始终显示当前输出模式。菜单为**单键触发**：按一个键立即执行，无需回车。
+
+| 按键 | 功能 |
+|---|---|
+| `?` | 帮助（半角 `?` 与全角 `？` 均可触发） |
+| `0` | 重置默认配置（输出模式与文件夹立即生效，界面语言重启后切换） |
+| `1` | 切换模式（Stable / Lazer） |
+| `2` | 查看当前投机取巧程度（单图显示该图的 d；目录模式逐张列出所有已选图片的 d） |
+| `3` | 修改投机取巧程度 |
+| `4` | 单图批量生成（仅单图模式） |
+| `5` | 模式修复功能（Stable 为“修复面尾白线”，Lazer 为“图片拉伸修复”） |
+| `6` | 调整输出模式 |
+| `7` | 调整输出/备份文件夹 |
+| `8` | 更换图片 |
+| `9` | 检查更新 |
+| `L` | 语言 / Language（切换界面语言：中文 / English） |
+| `Q` | 退出（保存配置） |
+
+需要输入文本的地方（图片/文件夹路径、d 值、批量生成的起止值与步长）仍然整行输入并回车确认；
+菜单 `7` 与菜单 `L` 中**留空（直接回车）即可返回上级菜单**。
+
+### 选择文件夹时
+
+选择文件夹后，程序会先列出命名匹配 `mania-note[数字]L` 或 `NoteImage*L` 的文件，
+并显示该目录的 PNG 总数，再让你确认修改范围：
+
+- `1` - 仅修改上面列出的匹配文件
+- `2` - 修改该目录下的全部图片文件
+- 直接回车 - 返回路径输入
+
+选中多个文件时，菜单 `2` 会逐张列出每张图片的投机取巧程度。
+
+### 输出模式
+
+- **常规模式（默认）**：处理结果输出到输出文件夹（默认 `/output`），不改动原文件。
+- **替换模式**：输出前先把所选原文件复制到备份文件夹（默认 `/backup-archive`）下的 `[备份时间戳]` 子文件夹，随后用输出文件替换原文件。
+
+细则：
+- 同一批处理的文件共用**同一个备份文件夹**。
+- 替换模式确认输出前，会用醒目提示即将覆盖的原文件，并给出本次备份路径。
+- 替换成功后会显示备份位置，即**实际创建的文件夹**：`/backup-archive/[备份时间戳]`。
+- 同一批次只保留最初版本的原文件：菜单 4 连续生成多张时，不会反复覆盖备份。
+- 替换模式批量生成（菜单 4）时，**每个 d 都从最初的原文件重新生成**，而不是在上一次的结果上继续变换；
+  结果与常规模式逐张生成完全一致，面身不会被累计消耗。
+- 常规模式下，若输出文件夹被设为源图片所在目录、且选择了"不添加后缀"，
+  输出路径会与原文件相同；此时程序会**跳过该文件并提示**，不会覆盖原图。
+
+### 高度小于 1000px 的图片
+
+这类图片**不在本程序的处理范围内**：它们通常是另一种面尾结构，而不是使用 Repeat 模式的面身文件，
+对它们做纵向复制并不能产生有效结果。程序会把它们**从本次处理中排除**并说明原因，
+**不会对任何文件做改动**：
+
+- 所选图片里还有可处理的文件时，程序跳过这些图片，继续处理其余文件；
+- 若所选图片全部属于这一类，则提示后返回路径输入，让你重新选择。
+
+### 配置文件
+
+- 配置文件为 exe（源码运行时为脚本）所在目录下的 `percy_config.json`，启动时读取、**退出时保存**。
+- 若该文件不存在，启动时会自动创建默认配置文件。
+- 默认值：输出模式 `常规模式`，输出文件夹 `/output`，备份文件夹 `/backup-archive`
+  （Windows；其他平台上这两个默认值是相对目录名 `output` / `backup-archive`，因为 `/output`
+  在 POSIX 上是根目录下的绝对路径）。
+- 界面语言在**首次运行时按系统界面语言**确定，之后以配置文件为准（可用菜单 `L` 修改，
+  也可以用命令行参数 `--lang zh|en` 在启动时强制指定，此时配置文件还不存在也有效）。
+- 配置文件若损坏而无法解析、或能解析但不是 JSON 对象，都会先被重命名为
+  `percy_config.json.bak`，再写入默认配置，以免设置被无痕清空。
+- **Windows**：输出/备份文件夹以 `/` 或 `\` 开头表示**相对于程序运行目录**；也可以直接填绝对路径。
+  其他平台上以 `/` 开头就是普通的绝对路径，不会被改写。
 
 ### 注意事项
-- 处理前请备份原图
+- 处理前请备份原图（替换模式虽会自动备份，仍建议自行留存）
 - 若 LN 结构不符合预期，处理可能失败
 - Lazer 模式会进行 -75px 修正（下限 0），同时将强制执行图片标准化（长度固定在32800px）。
 - 本程序暂不支持渐变颜色面身、非单一颜色或含有图案面身的皮肤。
-
----
-
-## English
-
-### Overview
-Percy Skin Editor is a utility for editing osu!mania LN skin images.
-
-A percy skin stretches the LN body to a very large height, then cuts from the top to create a short-tail visual effect.
-This tool adjusts the cut-off amount at the top of the image, i.e., cut off by x pixels (distance from image top to the first non-background pixel).
-
-### Features
-- Supports batch processing and batch generation
-- Supports both Stable and Lazer client
-- Automatically detects LN structure and adapts to different skin designs
-- Supports fixing visual issues caused by excessive stretching in Lazer
-- Supports fixing the tail white-line issue in Stable
-
-### Requirements
-- Python 3.8+
-- Pillow
-- requests
-- packaging
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-### Usage
-
-```bash
-python percy_en.py
-```
-
-### Notes
-- Back up original files before processing
-- Invalid LN structure may cause processing errors
-- Lazer mode applies a -75px correction (minimum 0), and normalizes all images to a fixed height of 32800px to prevent excessive stretching.
-- Stable mode keeps original behavior during normal processing; for white-line repair, if image height exceeds 32767px, content beyond 32767px is cropped and discarded, and the last row is set to fully transparent.
-- This program currently does not support gradient, patterned, or other complex non-uniform note bodies.
